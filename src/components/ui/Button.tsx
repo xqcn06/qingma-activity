@@ -1,0 +1,54 @@
+import { ButtonHTMLAttributes, forwardRef } from "react";
+import { Loader2 } from "lucide-react";
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  size?: "sm" | "md" | "lg";
+  loading?: boolean;
+  fullWidth?: boolean;
+}
+
+const variantStyles = {
+  primary: "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300",
+  secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:bg-gray-50",
+  ghost: "bg-transparent text-gray-600 hover:bg-gray-100 disabled:text-gray-300",
+  danger: "bg-red-50 text-red-600 hover:bg-red-100 disabled:bg-red-50 disabled:text-red-300",
+};
+
+const sizeStyles = {
+  sm: "px-3 py-1.5 text-sm",
+  md: "px-4 py-2.5 text-sm",
+  lg: "px-6 py-3.5 text-base",
+};
+
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      children,
+      variant = "primary",
+      size = "md",
+      loading = false,
+      fullWidth = false,
+      className = "",
+      disabled,
+      ...props
+    },
+    ref
+  ) => {
+    return (
+      <button
+        ref={ref}
+        className={`inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${fullWidth ? "w-full" : ""} ${className}`}
+        disabled={disabled || loading}
+        {...props}
+      >
+        {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+        {children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = "Button";
+
+export default Button;

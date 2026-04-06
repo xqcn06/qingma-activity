@@ -1,0 +1,548 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 角色枚举（系统权限角色）
+enum Role {
+  TEACHER          // 老师
+  ADMIN            // 活动管理员
+  STAFF            // 工作人员
+  STUDENT          // 学生（队长通过 TeamMember.isCaptain 标识）
+}
+
+// 学生班委职务
+enum StudentPosition {
+  CLASS_MONITOR    // 班长
+  LEAGUE_SECRETARY // 团支书
+  STUDY_COMMISSAR  // 学习委员
+  LIFE_COMMISSAR   // 生活班长
+  CULTURE_COMMISSAR // 文体委员
+  PROPAGANDA       // 宣传委员
+  PSYCHOLOGY       // 心理委员
+  ORGANIZATION     // 组织委员
+  INFO             // 信息委员
+  NONE             // 其他班委
+}
+
+// 管理员权限
+enum Permission {
+  MANAGE_REGISTRATIONS   // 管理报名
+  MANAGE_TEAMS           // 管理分组
+  MANAGE_STAFF           // 管理工作人员
+  MANAGE_SCHEDULE        // 管理日程
+  MANAGE_ANNOUNCEMENTS   // 管理公告
+  MANAGE_SCORES          // 管理积分
+  MANAGE_MATERIALS       // 管理物资
+  MANAGE_ROTATION        // 管理轮转排班
+  MANAGE_TREASURE        // 管理寻宝
+  VIEW_FEEDBACKS         // 查看反馈
+  MANAGE_SETTINGS        // 系统设置
+  VIEW_LOGS              // 查看活动日志
+  EXPORT_DATA            // 导出数据
+  MANAGE_ADMINS          // 管理管理员（分配权限）
+}
+
+// 场次枚举
+enum Session {
+  FIRST            // 第一场
+  SECOND           // 第二场
+}
+
+// 报名状态
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// 工作人员申请状态
+enum StaffApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// 公告类型
+enum AnnouncementType {
+  NORMAL
+  URGENT
+  REMINDER
+}
+
+// 物资状态
+enum MaterialStatus {
+  PENDING
+  PURCHASED
+  ALLOCATED
+  USED
+}
+
+// 游戏站
+enum GameStation {
+  LISTEN_COMMAND   // 听我口令
+  DODGEBALL        // 躲避球
+  CODE_BREAK       // 密码破译
+  NO_TOUCH_GROUND  // 别碰地面
+  TREASURE_HUNT    // 寻宝赛
+}
+
+// 线索卡等级
+enum ClueCardTier {
+  A                // 最优线索（第一轮积分高者）
+  B                // 中等线索
+  C                // 基础线索
+}
+
+// 用户
+model User {
+  id              String    @id @default(cuid())
+  name            String    @db.VarChar(50)
+  studentId       String    @unique @db.VarChar(20)  // 学号/工号，登录账号
+  grade           Int?      // 2024 或 2025（管理员可能没有）
+  className       String?   @db.VarChar(50)  // 班级（管理员可能没有）
+  role            Role      @default(STUDENT)
+  phone           String    @db.VarChar(20)
+  email           String?   @db.VarChar(100)
+  password        String    @db.VarChar(255)
+  isFirstLogin    Boolean   @default(true)  // 是否首次登录（强制改密码）
+  isDisabled      Boolean   @default(false) // 是否禁用（软删除）
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // 学生相关
+  registration    Registration?
+  teamMembers     TeamMember[]
+
+  // 工作人员相关
+  staffAssignment StaffAssignment?
+
+  // 管理员/老师相关
+  permissions     AdminPermission[]  // 管理员权限（仅 ADMIN 角色使用）
+  scoresRecorded  Score[]   @relation("ScoreRecorder")
+  feedbacks       Feedback[]
+  albums          Album[]
+  importBatches   ImportBatch[] @relation("ImportOperator")
+
+  // 签到相关
+  checkinRecords  CheckinRecord[]
+
+  @@index([studentId])
+  @@index([grade])
+  @@index([role])
+}
+
+// 管理员权限分配
+model AdminPermission {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  permission  Permission
+  createdAt   DateTime   @default(now())
+
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+// Excel 导入批次
+model ImportBatch {
+  id          String    @id @default(cuid())
+  fileName    String    @db.VarChar(200)  // 原始文件名
+  totalRows   Int       // 表格总行数
+  successRows Int       @default(0)       // 成功导入行数
+  failedRows  Int       @default(0)       // 失败行数
+  importedBy  String    // 操作人ID
+  importer    User      @relation("ImportOperator", fields: [importedBy], references: [id])
+  createdAt   DateTime  @default(now())
+
+  importLogs  ImportLog[]
+
+  @@index([importedBy])
+  @@index([createdAt])
+}
+
+// 导入日志
+model ImportLog {
+  id          String    @id @default(cuid())
+  batchId     String
+  batch       ImportBatch @relation(fields: [batchId], references: [id])
+  rowNumber   Int       // 表格行号
+  name        String    @db.VarChar(50)
+  studentId   String    @db.VarChar(20)
+  className   String?   @db.VarChar(50)
+  position    String?   @db.VarChar(100)  // 原始职务文本
+  status      String    @db.VarChar(20)   // SUCCESS / FAILED
+  errorMsg    String?   @db.Text          // 失败原因
+  createdAt   DateTime  @default(now())
+
+  @@index([batchId])
+  @@index([status])
+}
+
+// 报名
+model Registration {
+  id              String             @id @default(cuid())
+  userId          String             @unique
+  user            User               @relation(fields: [userId], references: [id])
+  session         Session            // 第一场/第二场
+  primaryPosition StudentPosition    // 主职务（用于队长识别）
+  secondaryPositions String?         @db.VarChar(200)  // 兼任职务，逗号分隔
+  status          RegistrationStatus @default(PENDING)
+  remark          String?            @db.VarChar(500)
+  rejectReason    String?            @db.VarChar(200)  // 拒绝原因
+  confirmedAt     DateTime?          // 学生确认报名时间
+  createdAt       DateTime           @default(now())
+
+  @@index([session])
+  @@index([status])
+  @@index([primaryPosition])
+}
+
+// 队伍
+model Team {
+  id              String    @id @default(cuid())
+  name            String    @db.VarChar(50)  // 第一组、第二组...
+  session         Session
+  totalScore      Int       @default(0)       // 第一轮积分
+  treasureScore   Int       @default(0)       // 寻宝赛积分
+  rotationOrder   Int?      // 第一轮轮转顺序（1-8）
+  clueCardTier    ClueCardTier? // 线索卡等级
+  publishedAt     DateTime? // 队伍成员名单发布时间（发布后学生才能看到自己所在队伍）
+  createdAt       DateTime  @default(now())
+
+  members         TeamMember[]
+  scores          Score[]
+  rotationTeamA   RotationSchedule[] @relation("RotationTeamA")
+  rotationTeamB   RotationSchedule[] @relation("RotationTeamB")
+
+  @@index([session])
+  @@index([totalScore])
+}
+
+// 队伍成员
+model TeamMember {
+  id        String    @id @default(cuid())
+  teamId    String
+  team      Team      @relation(fields: [teamId], references: [id])
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  isCaptain Boolean   @default(false)  // 是否为队长（班长优先识别）
+  createdAt DateTime  @default(now())
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([isCaptain])
+}
+
+// 游戏站配置
+model GameStationConfig {
+  id            String        @id @default(cuid())
+  station       GameStation   @unique
+  name          String        @db.VarChar(50)   // 游戏名称
+  description   String        @db.Text          // 游戏描述
+  rules         String        @db.Text          // 游戏规则
+  scoringRules  String        @db.Text          // 积分规则
+  maxScore      Int           // 满分
+  duration      Int           // 预计时长（分钟）
+  sortOrder     Int           // 排序
+  materials     String?       @db.Text          // 所需物料
+  staffCount    Int           // 所需工作人员数
+}
+
+// 轮转排班
+model RotationSchedule {
+  id            String        @id @default(cuid())
+  session       Session
+  round         Int           // 第几轮（1-4）
+  station       GameStation   // 游戏站
+  teamAId       String        // 对抗组 A 的队伍
+  teamBId       String        // 对抗组 B 的队伍
+  teamA         Team          @relation("RotationTeamA", fields: [teamAId], references: [id])
+  teamB         Team          @relation("RotationTeamB", fields: [teamBId], references: [id])
+  completed     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+
+  @@unique([session, round, station])
+  @@index([session])
+}
+
+// 积分
+model Score {
+  id            String        @id @default(cuid())
+  teamId        String
+  team          Team          @relation(fields: [teamId], references: [id])
+  station       GameStation   // 哪个游戏站
+  round         Int?          // 第几轮（寻宝赛为null）
+  score         Int           // 得分
+  reason        String?       @db.VarChar(200)
+  recordedBy    String?
+  recorder      User?         @relation("ScoreRecorder", fields: [recordedBy], references: [id])
+  createdAt     DateTime      @default(now())
+
+  @@index([teamId])
+  @@index([station])
+}
+
+// 工作人员岗位
+model StaffRole {
+  id            String    @id @default(cuid())
+  name          String    @db.VarChar(50)
+  description   String?   @db.VarChar(500)
+  requiredCount Int
+  session       Session?      // null 表示两场都需要
+  isActive      Boolean   @default(true)
+
+  assignments   StaffAssignment[]
+}
+
+// 工作人员分配
+model StaffAssignment {
+  id            String                @id @default(cuid())
+  userId        String                @unique
+  user          User                  @relation(fields: [userId], references: [id])
+  staffRoleId   String
+  staffRole     StaffRole             @relation(fields: [staffRoleId], references: [id])
+  session       Session
+  status        StaffApplicationStatus @default(PENDING)
+  createdAt     DateTime              @default(now())
+
+  @@index([userId])
+  @@index([staffRoleId])
+}
+
+// 日程
+model ScheduleItem {
+  id          String    @id @default(cuid())
+  title       String    @db.VarChar(100)
+  description String?   @db.Text
+  session     Session
+  startTime   DateTime
+  endTime     DateTime
+  location    String?   @db.VarChar(100)
+  sortOrder   Int       @default(0)
+  phase       String?   @db.VarChar(50)  // 阶段：赛前准备/开幕/轮转/中场/寻宝/闭幕/赛后
+
+  @@index([session])
+  @@index([startTime])
+}
+
+// 公告
+model Announcement {
+  id          String          @id @default(cuid())
+  title       String          @db.VarChar(200)
+  content     String          @db.Text
+  type        AnnouncementType @default(NORMAL)
+  isPinned    Boolean         @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([isPinned])
+  @@index([publishedAt])
+}
+
+// 物资
+model Material {
+  id          String         @id @default(cuid())
+  name        String         @db.VarChar(100)
+  category    String?        @db.VarChar(50)  // 游戏专属/全场通用/可借用/可选
+  gameStation GameStation?   // 所属游戏站
+  quantity    Int
+  unit        String?        @db.VarChar(20)  // 单位：个/卷/张/箱
+  unitPrice   Float?         // 单价
+  totalPrice  Float?         // 总价
+  allocatedTo String?        @db.VarChar(100)
+  session     Session?
+  status      MaterialStatus @default(PENDING)
+  description String?        @db.Text
+  createdAt   DateTime       @default(now())
+
+  @@index([gameStation])
+  @@index([status])
+}
+
+// 寻宝积分卡
+model TreasureCard {
+  id          String    @id @default(cuid())
+  session     Session
+  value       Int       // 分值：1/2/3
+  location    String    @db.VarChar(200)  // 位置描述
+  lat         Float?    // 纬度（可选，用于地图标记）
+  lng         Float?    // 经度（可选，用于地图标记）
+  imageX      Float?    // 地图图片上矩形区域 X 坐标（百分比 0-100）
+  imageY      Float?    // 地图图片上矩形区域 Y 坐标（百分比 0-100）
+  imageW      Float?    // 地图图片上矩形区域宽度（百分比 0-100）
+  imageH      Float?    // 地图图片上矩形区域高度（百分比 0-100）
+  mapImageUrl String?   @db.VarChar(500)  // 校园地图图片 URL
+  found       Boolean   @default(false)
+  foundBy     String?   // 找到的队伍ID
+  createdAt   DateTime  @default(now())
+
+  @@index([session])
+  @@index([found])
+}
+
+// 线索卡
+model ClueCard {
+  id          String        @id @default(cuid())
+  session     Session
+  tier        ClueCardTier  // A/B/C 等级
+  content     String        @db.Text  // 线索内容
+  distributed Boolean       @default(false)
+  distributedTo String?     // 发放给的队伍ID
+  createdAt   DateTime      @default(now())
+
+  @@index([session])
+  @@index([tier])
+}
+
+// 反馈
+model Feedback {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  overallRating      Int?
+  contentRating      Int?
+  organizationRating Int?
+  suggestion         String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  @@index([userId])
+}
+
+// 相册
+model Album {
+  id          String   @id @default(cuid())
+  title       String   @db.VarChar(200)
+  description String?  @db.VarChar(500)
+  imageUrl    String   @db.VarChar(500)
+  category    String?  @db.VarChar(50)
+  uploadedBy  String?
+  uploader    User?    @relation(fields: [uploadedBy], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+  @@index([createdAt])
+}
+
+// 系统设置
+model Setting {
+  id          String    @id @default(cuid())
+  key         String    @unique @db.VarChar(100)
+  value       String    @db.Text
+  category    String    @db.VarChar(50)  // basic/scoring/treasure/notification/advanced
+  description String?   @db.VarChar(200)
+  updatedAt   DateTime  @updatedAt
+
+  @@index([category])
+}
+
+// 签到配置
+model CheckinConfig {
+  id              String    @id @default(cuid())
+  session         Session   @unique
+  startTime       DateTime
+  endTime         DateTime
+  fenceCenterLat  Float?    // GPS围栏中心纬度
+  fenceCenterLng  Float?    // GPS围栏中心经度
+  fenceRadius     Int?      // GPS围栏半径（米）
+  verificationCode String?  @db.VarChar(20) // 现场验证码
+  mapGeoJson      String?   @db.Text       // 地图围栏GeoJSON
+  updatedAt       DateTime  @updatedAt
+}
+
+// 动态二维码Token
+model QRCodeToken {
+  id          String    @id @default(cuid())
+  token       String    @unique @db.VarChar(50)
+  session     Session
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([session])
+  @@index([expiresAt])
+}
+
+// 签到记录
+model CheckinRecord {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  session     Session
+  userType    String    @default("STUDENT") @db.VarChar(20)  // STUDENT / STAFF
+  method      String    @db.VarChar(20)  // GPS / QR / CODE
+  lat         Float?    // 签到时GPS纬度
+  lng         Float?    // 签到时GPS经度
+  status      String    @db.VarChar(20)  // ON_TIME / LATE / ABSENT
+  checkedAt   DateTime  @default(now())
+
+  @@unique([userId, session])
+  @@index([session])
+  @@index([status])
+  @@index([userId])
+  @@index([userType])
+}
+
+// 活动日志
+model ActivityLog {
+  id          String    @id @default(cuid())
+  session     Session
+  phase       String    @db.VarChar(50)   // 阶段名称
+  action      String    @db.Text          // 操作内容
+  operator    String?   @db.VarChar(50)   // 操作人
+  timestamp   DateTime  @default(now())
+
+  @@index([session])
+  @@index([timestamp])
+}
+
+// 页面（内容管理系统）
+model Page {
+  id          String   @id @default(cuid())
+  slug        String   @unique @db.VarChar(50)  // 页面标识: "home", "info", "activities"
+  title       String   @db.VarChar(100) // 页面名称
+  description String?  @db.VarChar(200) // 页面描述
+  isEnabled   Boolean  @default(true)   // 是否启用
+  sortOrder   Int      @default(0)      // 页面排序
+  blocks      PageBlock[]
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+}
+
+// 页面内容块
+model PageBlock {
+  id          String   @id @default(cuid())
+  pageId      String
+  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type        String   @db.VarChar(30)  // hero/text/image/grid/list/cta/divider/html
+  key         String   @db.VarChar(100) // 块标识
+  title       String   @db.VarChar(100) // 管理后台显示名称
+  isEnabled   Boolean  @default(true)   // 是否显示
+  sortOrder   Int      @default(0)      // 块排序
+  config      String   @db.Text         // JSON 配置
+  content     String   @db.Text         // 内容值 (Markdown/HTML/JSON)
+  updatedAt   DateTime @updatedAt
+
+  @@index([pageId])
+  @@index([key])
+}
+
+// 图片库
+model Image {
+  id          String   @id @default(cuid())
+  url         String   @db.VarChar(500) // 图片URL
+  alt         String?  @db.VarChar(200) // 图片描述
+  width       Int?     // 宽度
+  height      Int?     // 高度
+  size        Int?     // 文件大小
+  category    String?  @db.VarChar(50)  // 分类: banner/content/icon
+  uploadedAt  DateTime @default(now())
+
+  @@index([category])
+}
