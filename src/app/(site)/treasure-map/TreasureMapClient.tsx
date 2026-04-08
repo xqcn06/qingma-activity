@@ -27,6 +27,7 @@ interface TreasureMapClientProps {
     imageY: number | null;
     imageW: number | null;
     imageH: number | null;
+    found: boolean;
   }>;
   mapImageUrl: string | null;
   teamName: string;
@@ -120,18 +121,22 @@ export default function TreasureMapClient({
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-4 gap-3 mb-6">
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">剩余积分卡</p>
+            <p className="text-xs text-gray-500 mb-1">总积分卡</p>
             <p className="text-2xl font-bold text-gray-900">{treasureCards.length}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">当前寻宝积分</p>
-            <p className="text-2xl font-bold text-red-600">{currentScore}</p>
+            <p className="text-xs text-gray-500 mb-1">已找到</p>
+            <p className="text-2xl font-bold text-green-600">{treasureCards.filter(c => c.found).length}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <p className="text-xs text-gray-500 mb-1">线索卡</p>
-            <p className="text-2xl font-bold text-amber-600">{clueCards.length}</p>
+            <p className="text-xs text-gray-500 mb-1">剩余</p>
+            <p className="text-2xl font-bold text-gray-900">{treasureCards.filter(c => !c.found).length}</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <p className="text-xs text-gray-500 mb-1">寻宝积分</p>
+            <p className="text-2xl font-bold text-red-600">{currentScore}</p>
           </div>
         </div>
 
@@ -155,12 +160,13 @@ export default function TreasureMapClient({
                   {/* Treasure card markers */}
                   {showMap &&
                     treasureCards
-                      .filter((card) => card.imageX != null && card.imageY != null && !foundCards.includes(card.id))
+                      .filter((card) => card.imageX != null && card.imageY != null)
                       .map((card) => (
                         <button
                           key={card.id}
-                          onClick={() => setSelectedCard(card)}
-                          className="absolute group"
+                          onClick={() => !card.found && setSelectedCard(card)}
+                          disabled={card.found}
+                          className={`absolute group ${card.found ? 'cursor-default' : 'cursor-pointer'}`}
                           style={{
                             top: `${card.imageY}%`,
                             left: `${card.imageX}%`,
@@ -168,13 +174,22 @@ export default function TreasureMapClient({
                           }}
                         >
                           <div
-                            className={`w-8 h-8 ${valueColor(card.value)} rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white group-hover:scale-110 transition-transform`}
+                            className={`w-8 h-8 ${valueColor(card.value)} rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white group-hover:scale-110 transition-transform ${
+                              card.found ? 'opacity-40' : ''
+                            }`}
                           >
                             {card.value}
                           </div>
-                          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                            {card.location}
-                          </div>
+                          {!card.found && (
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                              {card.location}
+                            </div>
+                          )}
+                          {card.found && (
+                            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-400 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                              已找到
+                            </div>
+                          )}
                         </button>
                       ))}
                 </div>

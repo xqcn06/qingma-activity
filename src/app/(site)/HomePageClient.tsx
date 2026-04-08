@@ -123,7 +123,7 @@ export default function HomePageClient({ hero, announcement, features, overview,
                     transition={{ delay: 0.5 }}
                     className="mb-5"
                   >
-                    <CountdownTimer targetDate="2026-05-15T12:30:00" />
+                    <CountdownTimer targetDate="2026-04-19T13:00:00" />
                   </motion.div>
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -293,7 +293,7 @@ export default function HomePageClient({ hero, announcement, features, overview,
             transition={{ delay: 0.5, duration: 0.6 }}
             className="mb-12"
           >
-            <CountdownTimer targetDate="2026-05-15T12:30:00" />
+            <CountdownTimer targetDate="2026-04-19T13:00:00" />
           </motion.div>
 
           <motion.div

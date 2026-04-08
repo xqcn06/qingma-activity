@@ -86,8 +86,9 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(card, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "创建积分卡失败" }, { status: 500 });
+  } catch (error: any) {
+    console.error("创建积分卡失败:", error);
+    return NextResponse.json({ error: "创建积分卡失败: " + error.message }, { status: 500 });
   }
 }
 

@@ -379,7 +379,7 @@ model TreasureCard {
   imageY      Float?    // 地图图片上矩形区域 Y 坐标（百分比 0-100）
   imageW      Float?    // 地图图片上矩形区域宽度（百分比 0-100）
   imageH      Float?    // 地图图片上矩形区域高度（百分比 0-100）
-  mapImageUrl String?   @db.VarChar(500)  // 校园地图图片 URL
+  mapImageUrl String?   @db.Text  // 校园地图图片 URL
   found       Boolean   @default(false)
   foundBy     String?   // 找到的队伍ID
   createdAt   DateTime  @default(now())
@@ -603,4 +603,18 @@ model Image {
   uploadedAt  DateTime @default(now())
 
   @@index([category])
+}
+
+// 编辑锁 - 用于实时协作
+model EditLock {
+  id          String   @id @default(cuid())
+  targetType  String   @db.VarChar(30)   // user/team/registration等
+  targetId    String   @db.VarChar(50)   // 被编辑的目标ID
+  userId      String   // 锁定者ID
+  userName    String   // 锁定者姓名
+  lockedAt    DateTime @default(now())
+  expiresAt   DateTime // 锁过期时间
+
+  @@unique([targetType, targetId])
+  @@index([targetType, targetId])
 }

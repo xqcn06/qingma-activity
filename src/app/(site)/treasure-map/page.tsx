@@ -27,11 +27,20 @@ export default async function TreasureMapPage() {
 
   const team = teamMember.team;
 
-  // Get treasure cards (only unfound ones for this session)
+  // Get all treasure cards for this session (including found ones)
   const treasureCards = await prisma.treasureCard.findMany({
     where: {
       session: team.session,
-      found: false,
+    },
+    select: {
+      id: true,
+      value: true,
+      location: true,
+      imageX: true,
+      imageY: true,
+      imageW: true,
+      imageH: true,
+      found: true,
     },
     orderBy: { value: "desc" },
   });

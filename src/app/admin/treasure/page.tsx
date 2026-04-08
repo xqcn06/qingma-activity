@@ -397,7 +397,6 @@ export default function TreasurePage() {
           imageY: parseFloat(pendingRect.y.toFixed(2)),
           imageW: parseFloat(pendingRect.w.toFixed(2)),
           imageH: parseFloat(pendingRect.h.toFixed(2)),
-          mapImageUrl: mapImage,
         }),
       });
       if (res.ok) {

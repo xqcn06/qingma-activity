@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Target, Clock, Users, Trophy, BookOpen, Map, Footprints, Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { Target, Clock, Users, Trophy, BookOpen, Map, Footprints, Brain, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 
 const ICON_MAP: Record<string, any> = {
   Target, Footprints, Brain, Map,
@@ -207,6 +208,24 @@ export default function ActivitiesPageClient({ gameStations, treasureHunt }: Act
               </div>
             </div>
           )}
+
+          {/* Treasure Map CTA */}
+          <Link href="/treasure-map" className="mt-6 block">
+            <div className="bg-gradient-to-r from-red-600 to-red-500 rounded-2xl p-6 text-white hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Map className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">进入寻宝地图</h3>
+                    <p className="text-sm text-white/70">查看线索卡和积分卡位置</p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5" />
+              </div>
+            </div>
+          </Link>
         </motion.div>
       </div>
     </div>

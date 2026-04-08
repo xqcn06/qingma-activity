@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import type { Permission } from "@prisma/client";
+import type { Permission, Role } from "@prisma/client";
 
 const ALL_PERMISSIONS: Permission[] = [
   "MANAGE_REGISTRATIONS",
@@ -36,22 +36,40 @@ async function checkManageAdminsPermission() {
   return { authorized: true, userId, role };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const check = await checkManageAdminsPermission();
   if (!check.authorized) return check.error!;
 
-  const adminUsers = await prisma.user.findMany({
-    where: {
-      role: { in: ["ADMIN", "TEACHER"] },
-      isDisabled: false,
-    },
+  const { searchParams } = new URL(req.url);
+  const role = searchParams.get("role") || "ALL";
+  const search = searchParams.get("search") || "";
+
+  const where: any = {
+    isDisabled: false,
+  };
+
+  if (role !== "ALL") {
+    where.role = role as Role;
+  }
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search } },
+      { studentId: { contains: search } },
+      { className: { contains: search } },
+    ];
+  }
+
+  const users = await prisma.user.findMany({
+    where,
     include: {
       permissions: { select: { permission: true } },
+      _count: { select: { teamMembers: true, staffAssignments: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  const result = adminUsers.map((user) => {
+  const result = users.map((user) => {
     const perms = user.role === "TEACHER"
       ? ALL_PERMISSIONS
       : user.permissions.map((p) => p.permission);
@@ -61,8 +79,13 @@ export async function GET() {
       name: user.name,
       studentId: user.studentId,
       role: user.role,
+      grade: user.grade,
+      className: user.className,
+      phone: user.phone,
       permissions: perms,
       isSuperAdmin: perms.includes("MANAGE_ADMINS"),
+      teamCount: user._count.teamMembers,
+      staffCount: user._count.staffAssignments,
     };
   });
 
