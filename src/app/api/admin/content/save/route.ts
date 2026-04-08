@@ -28,16 +28,24 @@ export async function POST(req: Request) {
     await prisma.pageBlock.deleteMany({ where: { pageId } });
 
     for (const block of blocks) {
+      let contentValue = block.content;
+      let configValue = block.config;
+      
+      // Handle content - if object, stringify; if string that looks like JSON, try parse and re-stringify
+      if (typeof contentValue !== "string") {
+        contentValue = JSON.stringify(contentValue || "");
+      } else {
+        const trimmed = contentValue.trim();
+        if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1) {
+          try { contentValue = JSON.stringify(JSON.parse(trimmed)); } catch {}
+        }
+      }
+      
+      // Handle config
+      if (typeof configValue !== "string") configValue = JSON.stringify(configValue || {});
+      
       await prisma.pageBlock.create({
-        data: {
-          pageId,
-          type: block.type,
-          key: block.key,
-          title: block.title,
-          config: typeof block.config === "string" ? block.config : JSON.stringify(block.config || {}),
-          content: typeof block.content === "string" ? block.content : JSON.stringify(block.content || ""),
-          sortOrder: block.sortOrder || 0,
-        },
+        data: { pageId, type: block.type, key: block.key, title: block.title, config: configValue, content: contentValue, sortOrder: block.sortOrder || 0 },
       });
     }
 

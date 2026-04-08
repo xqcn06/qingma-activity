@@ -85,3 +85,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e.message || "回滚失败" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+    const permissions = (session.user as any).permissions || [];
+    if (!permissions.includes("MANAGE_SETTINGS")) return NextResponse.json({ error: "无权限" }, { status: 403 });
+    const { searchParams } = new URL(req.url);
+    const versionId = searchParams.get("versionId");
+    if (!versionId) return NextResponse.json({ error: "缺少 versionId" }, { status: 400 });
+    await prisma.pageVersion.delete({ where: { id: versionId } });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "删除失败" }, { status: 500 });
+  }
+}

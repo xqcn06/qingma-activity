@@ -18,12 +18,15 @@ export async function GET(req: Request) {
     }
 
     // === 学生签到统计 ===
+    // 只获取学生（排除工作人员）
     const studentRegistrations = await prisma.registration.findMany({
       where: { status: "APPROVED", session: sessionParam as any },
       include: {
         user: { select: { id: true, name: true, studentId: true, className: true, grade: true, role: true } },
       },
     });
+    // 过滤只保留学生
+    const filterStudentRegistrations = studentRegistrations.filter(reg => reg.user.role === "STUDENT");
 
     const studentWhere: any = { session: sessionParam as any, userType: "STUDENT" };
     if (checkinSessionId) studentWhere.checkinSessionId = checkinSessionId;
@@ -38,7 +41,7 @@ export async function GET(req: Request) {
     });
 
     const checkedStudentIds = new Set(studentRecords.map((r) => r.userId));
-    const uncheckedStudents = studentRegistrations
+    const uncheckedStudents = filterStudentRegistrations
       .filter((reg) => !checkedStudentIds.has(reg.userId))
       .map((reg) => ({
         userId: reg.userId,
@@ -244,5 +247,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, data: record });
   } catch {
     return NextResponse.json({ error: "手动签到失败" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const recordId = searchParams.get("id");
+    if (!recordId) return NextResponse.json({ error: "缺少记录ID" }, { status: 400 });
+
+    await prisma.checkinRecord.delete({ where: { id: recordId } });
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "删除失败" }, { status: 500 });
   }
 }

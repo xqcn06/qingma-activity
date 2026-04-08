@@ -46,39 +46,43 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    // 检查是否已签到（任意活跃的 CheckinSession）
-    const record = await prisma.checkinRecord.findFirst({
-      where: {
-        userId: user.id,
-        session: sessionParam as any,
-      },
-      orderBy: { checkedAt: "desc" },
-    });
-
-    // 从 CheckinSession 获取配置（查找当前活跃的活动）
     const userType = await getUserType(user.id);
-    const activeSession = await prisma.checkinSession.findFirst({
+
+    // 获取当前场次下所有可用的签到活动
+    const now = new Date();
+    const activeSessions = await prisma.checkinSession.findMany({
       where: {
         session: sessionParam as any,
         userType,
         status: "ACTIVE",
+        OR: [{ endTime: null }, { endTime: { gt: now } }],
       },
       orderBy: { createdAt: "desc" },
+      select: {
+        id: true, name: true, startTime: true, endTime: true,
+        fenceCenterLat: true, fenceCenterLng: true, fenceRadius: true, verificationCode: true,
+      },
+    });
+
+    // 获取用户已签到记录
+    const records = await prisma.checkinRecord.findMany({
+      where: { userId: user.id, session: sessionParam as any },
+      include: { checkinSession: { select: { id: true, name: true } } },
+      orderBy: { checkedAt: "desc" },
+    });
+
+    const sessionsWithStatus = activeSessions.map((s) => {
+      const record = records.find((r) => r.checkinSessionId === s.id);
+      return {
+        ...s, checkedIn: !!record,
+        record: record ? { id: record.id, method: record.method, status: record.status, checkinTime: record.checkedAt } : null,
+        config: { startTime: s.startTime, endTime: s.endTime, hasFence: !!(s.fenceCenterLat && s.fenceCenterLng && s.fenceRadius), fenceCenterLat: s.fenceCenterLat, fenceCenterLng: s.fenceCenterLng, fenceRadius: s.fenceRadius },
+      };
     });
 
     return NextResponse.json({
-      checkedIn: !!record,
-      record,
-      config: activeSession
-        ? {
-            startTime: activeSession.startTime,
-            endTime: activeSession.endTime,
-            hasFence: !!(activeSession.fenceCenterLat && activeSession.fenceCenterLng && activeSession.fenceRadius),
-            fenceCenterLat: activeSession.fenceCenterLat,
-            fenceCenterLng: activeSession.fenceCenterLng,
-            fenceRadius: activeSession.fenceRadius,
-          }
-        : null,
+      sessions: sessionsWithStatus,
+      allRecords: records.map((r) => ({ id: r.id, checkinSessionId: r.checkinSessionId, checkinSessionName: r.checkinSession?.name, method: r.method, status: r.status, checkinTime: r.checkedAt })),
     });
   } catch {
     return NextResponse.json({ error: "获取签到状态失败" }, { status: 500 });
@@ -93,7 +97,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { method, lat, lng, qrToken, code, session: sessionParam } = body;
+    const { method, lat, lng, qrToken, code, session: sessionParam, checkinSessionId } = body;
 
     if (!method || !["GPS", "QR", "CODE"].includes(method)) {
       return NextResponse.json({ error: "无效的签到方式" }, { status: 400 });
@@ -111,21 +115,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    // 获取用户类型
     const userType = await getUserType(user.id);
 
-    // 从 CheckinSession 获取配置（查找当前活跃的活动）
-    const activeSession = await prisma.checkinSession.findFirst({
-      where: {
-        session: sessionParam as any,
-        userType,
-        status: "ACTIVE",
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // 根据 checkinSessionId 获取签到活动
+    let activeSession;
+    if (checkinSessionId) {
+      activeSession = await prisma.checkinSession.findUnique({ where: { id: checkinSessionId } });
+      if (activeSession && (activeSession.session !== sessionParam || activeSession.userType !== userType)) {
+        return NextResponse.json({ error: "签到活动不匹配" }, { status: 400 });
+      }
+    } else {
+      activeSession = await prisma.checkinSession.findFirst({
+        where: { session: sessionParam as any, userType, status: "ACTIVE" },
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     if (!activeSession) {
       return NextResponse.json({ error: "该场次尚未开启签到" }, { status: 400 });
+    }
+
+    if (activeSession.status !== "ACTIVE") {
+      return NextResponse.json({ error: "该签到活动已结束" }, { status: 400 });
     }
 
     const now = new Date();
@@ -136,14 +147,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "签到尚未开始" }, { status: 400 });
     }
 
+    if (endTime && now > endTime) {
+      return NextResponse.json({ error: "该签到活动已结束" }, { status: 400 });
+    }
+
     const isLate = endTime ? now > endTime : false;
 
-    // 检查是否已签到
+    // 检查是否已签到此活动
     const existing = await prisma.checkinRecord.findFirst({
-      where: {
-        userId: user.id,
-        session: sessionParam as any,
-      },
+      where: { userId: user.id, checkinSessionId: activeSession.id },
     });
 
     if (existing) {
@@ -172,12 +184,7 @@ export async function POST(req: Request) {
       }
 
       const validToken = await prisma.qRCodeToken.findFirst({
-        where: {
-          token: qrToken,
-          session: sessionParam as any,
-          userType,
-          expiresAt: { gt: now },
-        },
+        where: { token: qrToken, checkinSessionId: activeSession.id, expiresAt: { gt: now } },
       });
 
       if (!validToken) {
@@ -190,7 +197,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "缺少验证码" }, { status: 400 });
       }
 
-      if (!activeSession.verificationCode || code.toUpperCase() !== activeSession.verificationCode.toUpperCase()) {
+      const inputCode = code.trim().toUpperCase();
+      const correctCode = activeSession.verificationCode?.toUpperCase();
+      if (!correctCode || inputCode !== correctCode) {
         return NextResponse.json({ error: "验证码错误" }, { status: 400 });
       }
     }
@@ -210,10 +219,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      data: {
-        ...record,
-        isLate,
-      },
+      data: { ...record, checkinSessionName: activeSession.name, isLate },
     });
   } catch {
     return NextResponse.json({ error: "签到失败" }, { status: 500 });

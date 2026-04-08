@@ -112,3 +112,20 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "更新签到活动失败" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get("id");
+    if (!sessionId) return NextResponse.json({ error: "缺少签到活动ID" }, { status: 400 });
+
+    // Delete related records first
+    await prisma.checkinRecord.deleteMany({ where: { checkinSessionId: sessionId } });
+    // Delete the session
+    await prisma.checkinSession.delete({ where: { id: sessionId } });
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "删除失败" }, { status: 500 });
+  }
+}

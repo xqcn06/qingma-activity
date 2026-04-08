@@ -25,24 +25,19 @@ import { useToast } from "@/components/ui/Toast";
 type CheckinMethod = "GPS" | "QR" | "CODE";
 type SessionType = "FIRST" | "SECOND";
 
-interface CheckinStatus {
+interface CheckinSessionInfo {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string | null;
   checkedIn: boolean;
-  record?: {
-    id: string;
-    method: string;
-    status: string;
-    lat: number | null;
-    lng: number | null;
-    checkinTime: string;
-  };
-  config?: {
-    startTime: string;
-    endTime: string;
-    hasFence: boolean;
-    fenceCenterLat: number | null;
-    fenceCenterLng: number | null;
-    fenceRadius: number | null;
-  };
+  record?: { id: string; method: string; status: string; checkinTime: string } | null;
+  config?: { startTime: string; endTime: string | null; hasFence: boolean; fenceCenterLat: number | null; fenceCenterLng: number | null; fenceRadius: number | null };
+}
+
+interface CheckinStatus {
+  sessions: CheckinSessionInfo[];
+  allRecords: { id: string; checkinSessionId: string; checkinSessionName: string; method: string; status: string; checkinTime: string }[];
 }
 
 const SESSION_LABELS: Record<SessionType, string> = {
@@ -64,11 +59,12 @@ interface GpsCheckinCardProps {
   distance: number | null;
   inFence: boolean | null;
   submitting: boolean;
+  selectedSessionDetail: CheckinSessionInfo | null;
   onDetectLocation: () => void;
   onCheckin: () => void;
 }
 
-function GpsCheckinCard({ gpsCoords, gpsLoading, gpsError, distance, inFence, submitting, onDetectLocation, onCheckin }: GpsCheckinCardProps) {
+function GpsCheckinCard({ gpsCoords, gpsLoading, gpsError, distance, inFence, submitting, selectedSessionDetail, onDetectLocation, onCheckin }: GpsCheckinCardProps) {
   return (
     <div className="space-y-4">
       <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
@@ -127,36 +123,14 @@ function GpsCheckinCard({ gpsCoords, gpsLoading, gpsError, distance, inFence, su
             </div>
           )}
 
-          {inFence === true ? (
-            <Button
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={submitting}
-              onClick={onCheckin}
-            >
-              <CheckCircle2 className="w-5 h-5" />
-              可以签到
-            </Button>
+          {!selectedSessionDetail ? (
+            <Button variant="primary" size="lg" fullWidth disabled>请先选择签到活动</Button>
+          ) : inFence === true ? (
+            <Button variant="primary" size="lg" fullWidth loading={submitting} onClick={onCheckin}><CheckCircle2 className="w-5 h-5" />可以签到</Button>
           ) : inFence === false ? (
-            <div className="bg-red-50 rounded-xl p-4 text-center">
-              <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-              <p className="text-red-700 font-semibold">不在签到范围内</p>
-              <p className="text-sm text-red-500 mt-1">
-                请靠近签到地点后再试
-              </p>
-            </div>
+            <div className="bg-red-50 rounded-xl p-4 text-center"><AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" /><p className="text-red-700 font-semibold">不在签到范围内</p><p className="text-sm text-red-500 mt-1">请靠近签到地点后再试</p></div>
           ) : (
-            <Button
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={submitting}
-              onClick={onCheckin}
-            >
-              <MapPin className="w-5 h-5" />
-              立即签到
-            </Button>
+            <Button variant="primary" size="lg" fullWidth loading={submitting} onClick={onCheckin}><MapPin className="w-5 h-5" />立即签到</Button>
           )}
         </motion.div>
       )}
@@ -258,6 +232,7 @@ export default function CheckinPage() {
   const { success, error: showError } = useToast();
 
   const [selectedSession, setSelectedSession] = useState<SessionType>("FIRST");
+  const [selectedSessionDetail, setSelectedSessionDetail] = useState<CheckinSessionInfo | null>(null);
   const [activeTab, setActiveTab] = useState<CheckinMethod>("GPS");
   const [status, setStatus] = useState<CheckinStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -277,33 +252,30 @@ export default function CheckinPage() {
   // Code state
   const [code, setCode] = useState("");
 
-  const fetchStatus = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/checkin?session=${selectedSession}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        if (data.checkedIn) {
-          setSuccessState(true);
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSession]);
-
+  // Fetch status
   useEffect(() => {
-    if (sessionStatus === "unauthenticated") {
-      router.push("/login?callbackUrl=/checkin");
-      return;
-    }
-    if (sessionStatus === "authenticated") {
-      fetchStatus();
-    }
-  }, [sessionStatus, fetchStatus, router]);
+    if (sessionStatus !== "authenticated") return;
+    
+    const sessionToFetch = selectedSession;
+    setLoading(true);
+    setSelectedSessionDetail(null);
+    
+    fetch(`/api/checkin?session=${sessionToFetch}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.sessions) {
+          setStatus(data);
+          if (data.sessions.length > 0) {
+            const unchecked = data.sessions.find((s: CheckinSessionInfo) => !s.checkedIn);
+            setSelectedSessionDetail(unchecked || data.sessions[0]);
+          }
+        } else {
+          setStatus({ sessions: [], allRecords: [] });
+        }
+      })
+      .catch(e => console.error("fetchStatus error:", e))
+      .finally(() => setLoading(false));
+  }, [sessionStatus, selectedSession]);
 
   const haversineDistance = useCallback(
     (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -369,94 +341,48 @@ export default function CheckinPage() {
   }, [activeTab, gpsCoords, gpsLoading, detectLocation]);
 
   const handleGpsCheckin = async () => {
-    if (!gpsCoords) return;
+    if (!gpsCoords || !selectedSessionDetail) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "GPS",
-          lat: gpsCoords.lat,
-          lng: gpsCoords.lng,
-          session: selectedSession,
-        }),
+        body: JSON.stringify({ method: "GPS", lat: gpsCoords.lat, lng: gpsCoords.lng, session: selectedSession, checkinSessionId: selectedSessionDetail.id }),
       });
-
       const json = await res.json();
-      if (!res.ok) {
-        showError("签到失败", json.error);
-        return;
-      }
-
-      setSuccessState(true);
-      success("签到成功");
-      fetchStatus();
-    } catch {
-      showError("签到失败", "请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
+      if (!res.ok) { showError("签到失败", json.error); return; }
+      setSuccessState(true); success("签到成功"); fetchStatus();
+    } catch { showError("签到失败", "请稍后重试"); } finally { setSubmitting(false); }
   };
 
   const handleQrCheckin = async () => {
-    if (!qrToken.trim()) return;
+    if (!qrToken.trim() || !selectedSessionDetail) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "QR",
-          qrToken: qrToken.trim(),
-          session: selectedSession,
-        }),
+        body: JSON.stringify({ method: "QR", qrToken: qrToken.trim(), session: selectedSession, checkinSessionId: selectedSessionDetail.id }),
       });
-
       const json = await res.json();
-      if (!res.ok) {
-        showError("签到失败", json.error);
-        return;
-      }
-
-      setSuccessState(true);
-      success("签到成功");
-      fetchStatus();
-    } catch {
-      showError("签到失败", "请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
+      if (!res.ok) { showError("签到失败", json.error); return; }
+      setSuccessState(true); success("签到成功"); fetchStatus();
+    } catch { showError("签到失败", "请稍后重试"); } finally { setSubmitting(false); }
   };
 
   const handleCodeCheckin = async () => {
-    if (!code.trim()) return;
+    if (!code.trim() || !selectedSessionDetail) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "CODE",
-          code: code.trim(),
-          session: selectedSession,
-        }),
+        body: JSON.stringify({ method: "CODE", code: code.trim(), session: selectedSession, checkinSessionId: selectedSessionDetail.id }),
       });
-
       const json = await res.json();
-      if (!res.ok) {
-        showError("签到失败", json.error);
-        return;
-      }
-
-      setSuccessState(true);
-      success("签到成功");
-      fetchStatus();
-    } catch {
-      showError("签到失败", "请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
+      if (!res.ok) { showError("签到失败", json.error); return; }
+      setSuccessState(true); success("签到成功"); fetchStatus();
+    } catch { showError("签到失败", "请稍后重试"); } finally { setSubmitting(false); }
   };
 
   if (loading || sessionStatus === "loading") {
@@ -485,18 +411,8 @@ export default function CheckinPage() {
                 {(["FIRST", "SECOND"] as SessionType[]).map((s) => (
                   <button
                     key={s}
-                    onClick={() => {
-                      setSelectedSession(s);
-                      setSuccessState(false);
-                      setGpsCoords(null);
-                      setQrToken("");
-                      setCode("");
-                    }}
-                    className={`p-3 rounded-xl border-2 text-center transition-all font-semibold hover:shadow-lg hover:-translate-y-0.5 duration-300 ${
-                      selectedSession === s
-                        ? "border-red-600 bg-red-50 text-red-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }`}
+                    onClick={() => { setSelectedSession(s); setSelectedSessionDetail(null); setSuccessState(false); setGpsCoords(null); setQrToken(""); setCode(""); }}
+                    className={`p-3 rounded-xl border-2 text-center transition-all font-semibold hover:shadow-lg hover:-translate-y-0.5 duration-300 ${selectedSession === s ? "border-red-600 bg-red-50 text-red-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
                   >
                     {SESSION_LABELS[s]}
                   </button>
@@ -504,59 +420,52 @@ export default function CheckinPage() {
               </div>
             </div>
 
+            {/* Session detail selector */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">选择签到活动</label>
+              {status?.sessions?.length === 0 && <div className="bg-yellow-50 rounded-xl p-4 text-center text-yellow-700">当前场次暂无签到活动</div>}
+              {status?.sessions?.length > 0 && (
+                <div className="grid grid-cols-1 gap-3">
+                  {status.sessions.map((s) => (
+                    <button key={s.id} onClick={() => { setSelectedSessionDetail(s); setSuccessState(false); setGpsCoords(null); setQrToken(""); setCode(""); }}
+                      className={`p-3 rounded-xl border-2 text-left transition-all hover:shadow-lg hover:-translate-y-0.5 duration-300 ${selectedSessionDetail?.id === s.id ? "border-red-600 bg-red-50" : "border-gray-200 hover:border-gray-300"}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className={`font-semibold ${s.checkedIn ? "text-green-600" : "text-gray-900"}`}>{s.checkedIn ? "✓ " : ""}{s.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{new Date(s.startTime).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                        {s.checkedIn && <CheckCircle className="w-5 h-5 text-green-500" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Already checked in */}
             <AnimatePresence mode="wait">
-              {successState && status?.record ? (
-                <motion.div
-                  key="success"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="text-center py-8"
-                >
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-                  >
+              {successState && selectedSessionDetail?.record ? (
+                <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="text-center py-8">
+                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200, delay: 0.2 }}>
                     <CheckCircle className="w-20 h-20 lg:w-24 lg:h-24 text-green-500 mx-auto mb-4" />
                   </motion.div>
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">签到成功！</h2>
+                  <p className="text-gray-500 mb-4">{selectedSessionDetail.name}</p>
                   <div className="space-y-3 mt-6 text-left max-w-sm mx-auto">
                     <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
                       <span className="text-gray-500 text-sm">签到状态</span>
-                      <Badge
-                        variant={status.record.status === "LATE" ? "warning" : "success"}
-                        size="md"
-                      >
-                        {status.record.status === "LATE" ? "迟到" : "准时"}
-                      </Badge>
+                      <Badge variant={selectedSessionDetail.record.status === "LATE" ? "warning" : "success"} size="md">{selectedSessionDetail.record.status === "LATE" ? "迟到" : "准时"}</Badge>
                     </div>
                     <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
                       <span className="text-gray-500 text-sm">签到时间</span>
-                      <span className="font-mono font-semibold text-gray-900">
-                        {new Date(status.record.checkinTime).toLocaleTimeString("zh-CN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </span>
+                      <span className="font-mono font-semibold text-gray-900">{new Date(selectedSessionDetail.record.checkinTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                     </div>
                     <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
                       <span className="text-gray-500 text-sm">签到方式</span>
-                      <span className="font-semibold text-gray-900">
-                        {METHOD_LABELS[status.record.method as CheckinMethod]}
-                      </span>
+                      <span className="font-semibold text-gray-900">{METHOD_LABELS[selectedSessionDetail.record.method as CheckinMethod]}</span>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    className="mt-6"
-                    onClick={() => router.push("/")}
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    返回首页
-                  </Button>
+                  <Button variant="ghost" className="mt-6" onClick={() => router.push("/")}><ArrowLeft className="w-4 h-4" />返回首页</Button>
                 </motion.div>
               ) : (
                 <motion.div

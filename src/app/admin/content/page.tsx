@@ -202,6 +202,20 @@ export default function ContentManagementPage() {
     } catch { showError("回滚失败"); }
   };
 
+  const handleDeleteVersion = async (versionId: string) => {
+    if (!confirm("确定删除此版本？")) return;
+    try {
+      const res = await fetch(`/api/admin/content/versions?versionId=${versionId}`, { method: "DELETE" });
+      if (res.ok) {
+        success("版本已删除");
+        fetchVersions(selectedPage.id);
+      } else {
+        const err = await res.json();
+        showError("删除失败", err.error);
+      }
+    } catch { showError("删除失败"); }
+  };
+
   const moveBlock = (idx: number, dir: "up" | "down") => {
     const newIdx = dir === "up" ? idx - 1 : idx + 1;
     if (newIdx < 0 || newIdx >= blocks.length) return;
@@ -874,9 +888,10 @@ export default function ContentManagementPage() {
                     {v.status === "published" ? "已发布" : "草稿"} · {v.createdBy} · {new Date(v.createdAt).toLocaleString("zh-CN")}
                   </p>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => handleRollback(v.id)}>
-                  回滚到此版本
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => handleRollback(v.id)}>回滚</Button>
+                  {v.status !== "published" && <Button variant="ghost" size="sm" onClick={() => handleDeleteVersion(v.id)}>删除</Button>}
+                </div>
               </div>
             ))
           )}

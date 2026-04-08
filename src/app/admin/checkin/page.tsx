@@ -166,6 +166,36 @@ export default function AdminCheckin() {
     generateQRCode(cs.id);
   };
 
+  // Delete checkin record
+  const handleDeleteRecord = async (recordId: string) => {
+    if (!confirm("确定删除此签到记录？")) return;
+    try {
+      const res = await fetch(`/api/admin/checkin/records?id=${recordId}`, { method: "DELETE" });
+      if (res.ok) {
+        success("签到记录已删除");
+        if (selectedCheckinSession) fetchDetailData(selectedCheckinSession);
+      } else {
+        const err = await res.json();
+        showError("删除失败", err.error);
+      }
+    } catch { showError("删除失败"); }
+  };
+
+  // Delete checkin session
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!confirm("确定删除此签到活动？所有相关签到记录也会被删除。")) return;
+    try {
+      const res = await fetch(`/api/admin/checkin/sessions?id=${sessionId}`, { method: "DELETE" });
+      if (res.ok) {
+        success("签到活动已删除");
+        fetchSessions();
+      } else {
+        const err = await res.json();
+        showError("删除失败", err.error);
+      }
+    } catch { showError("删除失败"); }
+  };
+
   // Create session
   const handleCreateSession = async () => {
     if (!newSessionName.trim()) {
@@ -446,10 +476,10 @@ export default function AdminCheckin() {
         ) : (
           <div className="divide-y divide-gray-50">
             {checkinSessions.map((cs) => (
-              <button
+              <div
                 key={cs.id}
                 onClick={() => openDetail(cs)}
-                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left cursor-pointer"
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
@@ -471,9 +501,9 @@ export default function AdminCheckin() {
                   <Badge variant={cs.status === "ACTIVE" ? "success" : "default"} size="sm">
                     {cs.status === "ACTIVE" ? "进行中" : "已结束"}
                   </Badge>
-                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteSession(cs.id); }} className="text-red-500 hover:text-red-700 text-sm">删除</button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -701,6 +731,7 @@ export default function AdminCheckin() {
                         </th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">签到时间</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">状态</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -718,6 +749,9 @@ export default function AdminCheckin() {
                             <Badge variant={record.status === "ON_TIME" ? "success" : record.status === "LATE" ? "warning" : "danger"} size="sm">
                               {record.status === "ON_TIME" ? "准时" : record.status === "LATE" ? "迟到" : "缺勤"}
                             </Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            <button onClick={() => handleDeleteRecord(record.id)} className="text-red-500 hover:text-red-700 text-sm">删除</button>
                           </td>
                         </tr>
                       ))}
@@ -742,6 +776,7 @@ export default function AdminCheckin() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
                           {checkinType === "student" ? "班级" : "岗位"}
                         </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -751,6 +786,9 @@ export default function AdminCheckin() {
                           <td className="px-3 py-2 text-sm text-gray-500 font-mono">{item.studentId}</td>
                           <td className="px-3 py-2 text-sm text-gray-500">
                             {checkinType === "student" ? item.className : item.roleName}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button onClick={() => handleManualCheckinById(item.studentId)} className="text-blue-500 hover:text-blue-700 text-sm">签到</button>
                           </td>
                         </tr>
                       ))}
