@@ -48,7 +48,7 @@ export async function GET(req: Request) {
     include: {
       registration: { select: { status: true, session: true } },
       teamMembers: { select: { team: { select: { name: true } }, isCaptain: true } },
-      staffAssignment: { select: { status: true, session: true } },
+      staffAssignments: { select: { status: true, session: true } },
       _count: { select: { permissions: true } },
     },
     orderBy: { createdAt: "desc" },
