@@ -1,13 +1,11 @@
-import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const authSession = await auth();
-    if (!authSession?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { id } = await params;
     const body = await req.json();
@@ -30,10 +28,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const authSession = await auth();
-    if (!authSession?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { id } = await params;
 

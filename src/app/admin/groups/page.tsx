@@ -39,6 +39,7 @@ import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 
 function SortableMember({
   member,
@@ -311,6 +312,7 @@ function TeamCard({
 }
 
 export default function AdminGroups() {
+  const { success, error: showError } = useToast();
   const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -370,14 +372,14 @@ export default function AdminGroups() {
           });
           if (res.ok) {
             const data = await res.json();
-            alert(`分组成功！共创建 ${data.teamCount} 个队伍`);
+            success(`分组成功！共创建 ${data.teamCount} 个队伍`);
             fetchTeams();
           } else {
             const json = await res.json();
-            alert(json.error || "分组失败");
+            showError(json.error || "分组失败");
           }
         } catch {
-          alert("分组失败");
+          showError("分组失败");
         } finally {
           setIsGrouping(false);
         }
@@ -400,11 +402,11 @@ export default function AdminGroups() {
             body: JSON.stringify({ action: "publish" }),
           });
           if (res.ok) {
-            alert("发布成功！");
+            success("发布成功！");
             fetchTeams();
           }
         } catch {
-          alert("发布失败");
+          showError("发布失败");
         } finally {
           setIsPublishing(false);
         }
@@ -417,7 +419,7 @@ export default function AdminGroups() {
       (t) => filterSession === "ALL" || t.session === filterSession
     );
     if (sessionTeams.length === 0) {
-      alert("没有可抽签的队伍");
+      showError("没有可抽签的队伍");
       return;
     }
     const session =
@@ -441,16 +443,14 @@ export default function AdminGroups() {
           });
           if (res.ok) {
             const data = await res.json();
-            alert(
-              `抽签成功！共创建 ${data.rotationCount} 组对抗，已分配轮转顺序`
-            );
+            success(`抽签成功！共创建 ${data.rotationCount} 组对抗，已分配轮转顺序`);
             fetchTeams();
           } else {
             const json = await res.json();
-            alert(json.error || "抽签失败");
+            showError(json.error || "抽签失败");
           }
         } catch {
-          alert("抽签失败");
+          showError("抽签失败");
         } finally {
           setIsDrawing(false);
         }
@@ -518,10 +518,10 @@ export default function AdminGroups() {
         fetchTeams();
       } else {
         const json = await res.json();
-        alert(json.error || "移动失败");
+        showError(json.error || "移动失败");
       }
     } catch {
-      alert("移动失败");
+      showError("移动失败");
     }
   };
 

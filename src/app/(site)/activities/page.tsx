@@ -1,18 +1,25 @@
-﻿"use client";
+import { prisma } from "@/lib/prisma";
+import ActivitiesPageClient from "./ActivitiesPageClient";
 
-import { motion } from "framer-motion";
-import { Target, Clock, Users, Trophy, BookOpen, Map, Footprints, Brain, ChevronDown, ChevronUp, Gamepad2 } from "lucide-react";
-import { useState } from "react";
+export const dynamic = "force-dynamic";
 
-const fadeInUp = { initial: { opacity: 0, y: 15 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "-40px" } };
+function parseJson<T>(str: string | null, fallback: T): T {
+  if (!str) return fallback;
+  try { return JSON.parse(str) as T; } catch { return fallback; }
+}
 
-const gameStations = [
+const ICON_MAP: Record<string, string> = {
+  Target: "听我口令",
+  Footprints: "躲避球",
+  Brain: "密码破译",
+  Map: "寻宝赛",
+};
+
+const DEFAULT_GAME_STATIONS = [
   {
     title: "听我口令",
-    icon: Target,
+    icon: "Target",
     color: "from-blue-500 to-blue-600",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
     duration: "13-19分钟",
     maxScore: "3分",
     staffCount: "5人",
@@ -33,10 +40,8 @@ const gameStations = [
   },
   {
     title: "躲避球",
-    icon: Footprints,
+    icon: "Footprints",
     color: "from-purple-500 to-purple-600",
-    bgColor: "bg-purple-50",
-    borderColor: "border-purple-200",
     duration: "15分钟",
     maxScore: "1分",
     staffCount: "4人",
@@ -59,10 +64,8 @@ const gameStations = [
   },
   {
     title: "密码破译",
-    icon: Brain,
+    icon: "Brain",
     color: "from-amber-500 to-amber-600",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
     duration: "20分钟",
     maxScore: "3分",
     staffCount: "5人",
@@ -84,10 +87,8 @@ const gameStations = [
   },
   {
     title: "别碰地面",
-    icon: Footprints,
+    icon: "Footprints",
     color: "from-emerald-500 to-emerald-600",
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-200",
     duration: "16分钟",
     maxScore: "2分",
     staffCount: "3人",
@@ -108,10 +109,8 @@ const gameStations = [
   },
 ];
 
-const treasureHunt = {
-  title: "\"械\"逅寻宝赛",
-  icon: Map,
-  color: "from-red-500 to-red-600",
+const DEFAULT_TREASURE_HUNT = {
+  title: '"械"逅寻宝赛',
   duration: "55分钟",
   description: "凭线索卡在校园指定区域寻找积分卡",
   groupRule: "16支队伍全员参与，每队分成3小组",
@@ -127,179 +126,25 @@ const treasureHunt = {
   ],
 };
 
-export default function ActivitiesPage() {
-  const [expandedStation, setExpandedStation] = useState<number | null>(null);
+export default async function ActivitiesPage() {
+  const page = await prisma.page.findFirst({
+    where: { slug: "activities", status: "published" },
+    include: { blocks: { orderBy: { sortOrder: "asc" } } },
+  });
 
-  return (
-    <div className="bg-gradient-to-br from-red-50/30 via-white to-white min-h-screen pb-24 lg:pb-12">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 lg:pt-24 pb-6 space-y-6">
-        <motion.div {...fadeInUp} className="flex items-center gap-2">
-          <span className="w-0.5 h-3.5 bg-blue-600 rounded-full" />
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-blue-600" />
-            第一轮：同步轮转积分赛
-          </h2>
-        </motion.div>
-        <p className="text-sm text-gray-500 -mt-4">16支队伍抽签分8组，每组2队，4个游戏站同步开始</p>
+  let gameStations = DEFAULT_GAME_STATIONS;
+  let treasureHunt = DEFAULT_TREASURE_HUNT;
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {gameStations.map((station, i) => {
-            const Icon = station.icon;
-            const isExpanded = expandedStation === i;
-            return (
-              <motion.div
-                key={station.title}
-                {...fadeInUp}
-                transition={{ delay: i * 0.05 }}
-                className="bg-white rounded-2xl p-5 border border-gray-100/80 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
-              >
-                <button
-                  onClick={() => setExpandedStation(isExpanded ? null : i)}
-                  className="w-full flex items-center gap-4 text-left"
-                >
-                  <div className={`w-12 h-12 bg-gradient-to-r ${station.color} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                    <Icon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-gray-900">{station.title}</h3>
-                    <p className="text-sm text-gray-500">{station.description}</p>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-gray-400 flex-shrink-0">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" /> {station.duration}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Trophy className="w-4 h-4" /> {station.maxScore}
-                    </span>
-                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </div>
-                </button>
+  if (page && page.blocks.length > 0) {
+    const stationBlocks = page.blocks.filter((b) => b.type === "game-station");
+    if (stationBlocks.length > 0) {
+      gameStations = stationBlocks.map((b) => parseJson(b.content, DEFAULT_GAME_STATIONS[0]));
+    }
+    const treasureBlock = page.blocks.find((b) => b.type === "treasure-hunt");
+    if (treasureBlock) {
+      treasureHunt = parseJson(treasureBlock.content, DEFAULT_TREASURE_HUNT);
+    }
+  }
 
-                {isExpanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    className={`mt-4 pt-4 border-t ${station.bgColor} rounded-xl p-4`}
-                  >
-                    <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
-                      <div className="bg-white rounded-lg p-3 text-center">
-                        <p className="text-gray-400 text-xs">预计时长</p>
-                        <p className="font-semibold text-gray-900">{station.duration}</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-3 text-center">
-                        <p className="text-gray-400 text-xs">最高积分</p>
-                        <p className="font-semibold text-gray-900">{station.maxScore}</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-3 text-center">
-                        <p className="text-gray-400 text-xs">工作人员</p>
-                        <p className="font-semibold text-gray-900">{station.staffCount}</p>
-                      </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                        <Users className="w-4 h-4" /> 分组规则
-                      </h4>
-                      <p className="text-sm text-gray-600">{station.groupRule}</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                          <BookOpen className="w-4 h-4" /> 游戏规则
-                        </h4>
-                        <ul className="space-y-1">
-                          {station.rules.map((rule, idx) => (
-                            <li key={idx} className="text-sm text-gray-600 flex gap-2">
-                              <span className="text-red-600 font-bold mt-0.5">{idx + 1}.</span>
-                              {rule}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div>
-                        <div className="mb-4 lg:mb-0">
-                          <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                            <Trophy className="w-4 h-4" /> 积分规则
-                          </h4>
-                          <ul className="space-y-1">
-                            {station.scoringRules.map((rule, idx) => (
-                              <li key={idx} className="text-sm text-gray-600 flex gap-2">
-                                <span className="text-red-600 font-bold mt-0.5">{idx + 1}.</span>
-                                {rule}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-gray-900 mb-2">所需物料</h4>
-                          <p className="text-sm text-gray-600">{station.materials}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </motion.div>
-            );
-          })}
-        </div>
-
-        <motion.div {...fadeInUp} className="flex items-center gap-2 pt-4">
-          <span className="w-0.5 h-3.5 bg-amber-600 rounded-full" />
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Map className="w-5 h-5 text-amber-600" />
-            第二轮："械"逅寻宝赛
-          </h2>
-        </motion.div>
-        <p className="text-sm text-gray-500 -mt-4">16支队伍全员参与，凭线索卡在校内寻宝</p>
-
-        <motion.div
-          {...fadeInUp}
-          className="bg-white rounded-2xl p-5 border border-gray-100/80 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
-        >
-          <div className="grid grid-cols-3 gap-3 mb-6 text-sm">
-            <div className="bg-gray-50 rounded-lg p-3 text-center">
-              <p className="text-gray-400 text-xs">预计时长</p>
-              <p className="font-bold text-gray-900">{treasureHunt.duration}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3 text-center">
-              <p className="text-gray-400 text-xs">参与方式</p>
-              <p className="font-bold text-gray-900">全员参与</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3 text-center">
-              <p className="text-gray-400 text-xs">积分类型</p>
-              <p className="font-bold text-gray-900">1分/2分/3分</p>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <h4 className="font-semibold text-gray-900 mb-2">游戏规则</h4>
-            <ul className="space-y-1">
-              {treasureHunt.rules.map((rule, idx) => (
-                <li key={idx} className="text-sm text-gray-600 flex gap-2">
-                  <span className="text-red-600 font-bold mt-0.5">{idx + 1}.</span>
-                  {rule}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-3">工作人员分配</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {treasureHunt.staff.map((s) => (
-                <div key={s.role} className="bg-gray-50 rounded-lg p-3">
-                  <p className="font-medium text-sm text-gray-900">{s.role}</p>
-                  <p className="text-xs text-gray-500">{s.count}</p>
-                  <p className="text-xs text-gray-500 mt-1">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </div>
-  );
+  return <ActivitiesPageClient gameStations={gameStations} treasureHunt={treasureHunt} />;
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { requireAdminAuth } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 
 const STATIONS = ["LISTEN_COMMAND", "DODGEBALL", "CODE_BREAK", "NO_TOUCH_GROUND"] as const;
@@ -13,6 +14,9 @@ function shuffle<T>(array: T[]): T[] {
 }
 
 export async function POST(request: NextRequest) {
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   try {
     const body = await request.json();
     const { session } = body;

@@ -1,13 +1,11 @@
-import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const sessionFilter = searchParams.get("session");
@@ -80,10 +78,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
     const { session: logSession, phase, action, operator } = body;
@@ -97,7 +93,7 @@ export async function POST(req: Request) {
         session: logSession,
         phase,
         action,
-        operator: operator || (session.user as any).name || "系统",
+        operator: operator || "系统",
       },
     });
 

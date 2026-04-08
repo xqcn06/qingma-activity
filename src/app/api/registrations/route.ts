@@ -33,6 +33,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "请填写必填项" }, { status: 400 });
     }
 
+    if (!["FIRST", "SECOND"].includes(sessionType)) {
+      return NextResponse.json({ error: "无效的场次选择" }, { status: 400 });
+    }
+
     const existing = await prisma.registration.findUnique({
       where: { userId: (session.user as any).id },
     });

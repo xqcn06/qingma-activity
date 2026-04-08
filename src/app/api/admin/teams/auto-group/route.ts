@@ -1,13 +1,12 @@
 import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     // 获取所有已通过报名的学生
     const registrations = await prisma.registration.findMany({

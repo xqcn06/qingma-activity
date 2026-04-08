@@ -1,4 +1,6 @@
 import { prisma } from "./prisma";
+import { auth } from "./auth";
+import { NextResponse } from "next/server";
 import type { Permission } from "@prisma/client";
 
 /**
@@ -23,6 +25,52 @@ export async function hasPermission(userId: string, permission: Permission): Pro
   });
 
   return !!perm;
+}
+
+/**
+ * 检查用户是否为管理员（ADMIN 或 TEACHER）或工作人员
+ */
+export async function isStaffRole(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (!user) return false;
+  return ["ADMIN", "TEACHER", "STAFF"].includes(user.role);
+}
+
+/**
+ * 统一鉴权：验证登录 + 管理员/工作人员角色
+ * 返回 { userId } 或 NextResponse 错误
+ */
+export async function requireAdminAuth(): Promise<{ userId: string } | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+  const userId = (session.user as any).id;
+  const isStaff = await isStaffRole(userId);
+  if (!isStaff) {
+    return NextResponse.json({ error: "无权限访问" }, { status: 403 });
+  }
+  return { userId };
+}
+
+/**
+ * 统一鉴权：验证登录 + 特定权限
+ * 返回 { userId } 或 NextResponse 错误
+ */
+export async function requirePermission(permission: Permission): Promise<{ userId: string } | NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+  const userId = (session.user as any).id;
+  const can = await hasPermission(userId, permission);
+  if (!can) {
+    return NextResponse.json({ error: "无权限操作" }, { status: 403 });
+  }
+  return { userId };
 }
 
 /**

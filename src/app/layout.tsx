@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 import InstallPrompt from "@/components/features/InstallPrompt";
 
 export const metadata: Metadata = {
@@ -34,7 +35,11 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="青马工程" />
       </head>
       <body className="min-h-full flex flex-col bg-bg text-text-primary">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </AuthProvider>
         <InstallPrompt />
       </body>
     </html>

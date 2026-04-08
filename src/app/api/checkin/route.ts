@@ -13,6 +13,17 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
+// 获取用户类型
+async function getUserType(userId: string): Promise<"STUDENT" | "STAFF"> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return "STUDENT";
+  if (user.role === "STAFF" || user.role === "TEACHER" || user.role === "ADMIN") return "STAFF";
+  const hasStaffAssignment = await prisma.staffAssignment.findFirst({
+    where: { userId, status: "APPROVED" },
+  });
+  return hasStaffAssignment ? "STAFF" : "STUDENT";
+}
+
 export async function GET(req: Request) {
   try {
     const session = await auth();
@@ -35,27 +46,37 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const record = await prisma.checkinRecord.findUnique({
+    // 检查是否已签到（任意活跃的 CheckinSession）
+    const record = await prisma.checkinRecord.findFirst({
       where: {
-        userId_session: {
-          userId: user.id,
-          session: sessionParam as any,
-        },
+        userId: user.id,
+        session: sessionParam as any,
       },
+      orderBy: { checkedAt: "desc" },
     });
 
-    const config = await prisma.checkinConfig.findUnique({
-      where: { session: sessionParam as any },
+    // 从 CheckinSession 获取配置（查找当前活跃的活动）
+    const userType = await getUserType(user.id);
+    const activeSession = await prisma.checkinSession.findFirst({
+      where: {
+        session: sessionParam as any,
+        userType,
+        status: "ACTIVE",
+      },
+      orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json({
       checkedIn: !!record,
       record,
-      config: config
+      config: activeSession
         ? {
-            startTime: config.startTime,
-            endTime: config.endTime,
-            hasFence: !!(config.fenceCenterLat && config.fenceCenterLng && config.fenceRadius),
+            startTime: activeSession.startTime,
+            endTime: activeSession.endTime,
+            hasFence: !!(activeSession.fenceCenterLat && activeSession.fenceCenterLng && activeSession.fenceRadius),
+            fenceCenterLat: activeSession.fenceCenterLat,
+            fenceCenterLng: activeSession.fenceCenterLng,
+            fenceRadius: activeSession.fenceRadius,
           }
         : null,
     });
@@ -90,30 +111,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const config = await prisma.checkinConfig.findUnique({
-      where: { session: sessionParam as any },
+    // 获取用户类型
+    const userType = await getUserType(user.id);
+
+    // 从 CheckinSession 获取配置（查找当前活跃的活动）
+    const activeSession = await prisma.checkinSession.findFirst({
+      where: {
+        session: sessionParam as any,
+        userType,
+        status: "ACTIVE",
+      },
+      orderBy: { createdAt: "desc" },
     });
 
-    if (!config) {
-      return NextResponse.json({ error: "该场次尚未配置签到" }, { status: 400 });
+    if (!activeSession) {
+      return NextResponse.json({ error: "该场次尚未开启签到" }, { status: 400 });
     }
 
     const now = new Date();
-    const startTime = new Date(config.startTime);
-    const endTime = new Date(config.endTime);
+    const startTime = new Date(activeSession.startTime);
+    const endTime = activeSession.endTime ? new Date(activeSession.endTime) : null;
 
     if (now < startTime) {
       return NextResponse.json({ error: "签到尚未开始" }, { status: 400 });
     }
 
-    const isLate = now > endTime;
+    const isLate = endTime ? now > endTime : false;
 
-    const existing = await prisma.checkinRecord.findUnique({
+    // 检查是否已签到
+    const existing = await prisma.checkinRecord.findFirst({
       where: {
-        userId_session: {
-          userId: user.id,
-          session: sessionParam as any,
-        },
+        userId: user.id,
+        session: sessionParam as any,
       },
     });
 
@@ -126,11 +155,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "缺少 GPS 坐标" }, { status: 400 });
       }
 
-      if (config.fenceCenterLat != null && config.fenceCenterLng != null && config.fenceRadius != null) {
-        const distance = haversineDistance(lat, lng, config.fenceCenterLat, config.fenceCenterLng);
-        if (distance > config.fenceRadius) {
+      if (activeSession.fenceCenterLat != null && activeSession.fenceCenterLng != null && activeSession.fenceRadius != null) {
+        const distance = haversineDistance(lat, lng, activeSession.fenceCenterLat, activeSession.fenceCenterLng);
+        if (distance > activeSession.fenceRadius) {
           return NextResponse.json(
-            { error: `您不在签到范围内（距离${Math.round(distance)}米，要求${config.fenceRadius}米内）` },
+            { error: `您不在签到范围内（距离${Math.round(distance)}米，要求${activeSession.fenceRadius}米内）` },
             { status: 400 }
           );
         }
@@ -146,6 +175,7 @@ export async function POST(req: Request) {
         where: {
           token: qrToken,
           session: sessionParam as any,
+          userType,
           expiresAt: { gt: now },
         },
       });
@@ -160,16 +190,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "缺少验证码" }, { status: 400 });
       }
 
-      if (!config.verificationCode || code.toUpperCase() !== config.verificationCode.toUpperCase()) {
+      if (!activeSession.verificationCode || code.toUpperCase() !== activeSession.verificationCode.toUpperCase()) {
         return NextResponse.json({ error: "验证码错误" }, { status: 400 });
       }
     }
-
-    // 判断用户类型：STAFF = 系统工作人员(STAFF/TEACHER/ADMIN) 或 有APPROVED的StaffAssignment
-    const hasStaffAssignment = await prisma.staffAssignment.findFirst({
-      where: { userId: user.id, status: "APPROVED" },
-    });
-    const userType = (user.role === "STAFF" || user.role === "TEACHER" || user.role === "ADMIN" || hasStaffAssignment) ? "STAFF" : "STUDENT";
 
     const record = await prisma.checkinRecord.create({
       data: {
@@ -180,6 +204,7 @@ export async function POST(req: Request) {
         lat: lat ?? null,
         lng: lng ?? null,
         status: isLate ? "LATE" : "ON_TIME",
+        checkinSessionId: activeSession.id,
       },
     });
 

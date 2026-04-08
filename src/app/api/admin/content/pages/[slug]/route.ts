@@ -1,12 +1,12 @@
-import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 // 获取单个页面（含内容块）
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const slug = searchParams.get("slug");

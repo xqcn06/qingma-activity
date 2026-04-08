@@ -1,13 +1,12 @@
 import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") || "";
@@ -59,10 +58,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
 
   const body = await req.json();
   const { name, studentId, grade, className, role, phone, email, password } = body;
@@ -96,10 +93,8 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
 
   const body = await req.json();
   const { id, ...data } = body;
@@ -131,10 +126,8 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
 
   const body = await req.json();
   const { id } = body;

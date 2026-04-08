@@ -31,6 +31,8 @@ import {
   Edit3,
   User,
   ChevronRight,
+  Database,
+  Bell,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { usePermission } from "@/hooks/usePermission";
@@ -61,6 +63,8 @@ const systemItems = [
   { href: "/admin/logs", label: "活动日志", icon: FileText, permission: "VIEW_LOGS", color: "from-slate-500 to-slate-600" },
   { href: "/admin/permissions", label: "权限管理", icon: KeyRound, permission: "MANAGE_SETTINGS", color: "from-violet-500 to-violet-600" },
   { href: "/admin/admins", label: "管理员", icon: UserCog, permission: "MANAGE_ADMINS", color: "from-gray-600 to-gray-700" },
+  { href: "/admin/backup", label: "数据备份", icon: Database, permission: "MANAGE_SETTINGS", color: "from-cyan-600 to-cyan-700" },
+  { href: "/admin/notifications", label: "通知发送", icon: Bell, permission: "MANAGE_ANNOUNCEMENTS", color: "from-rose-500 to-rose-600" },
   { href: "/admin/settings", label: "系统设置", icon: Settings, permission: "MANAGE_SETTINGS", color: "from-zinc-500 to-zinc-600" },
 ];
 
@@ -70,6 +74,45 @@ const adminTabs = [
   { id: "activity", label: "活动", icon: CalendarDays },
   { id: "system", label: "系统", icon: Sliders },
   { id: "profile", label: "我的", icon: User },
+];
+
+const navGroups = [
+  {
+    label: "核心管理",
+    items: [
+      { href: "/admin", label: "仪表盘", icon: LayoutDashboard, permission: null },
+      { href: "/admin/import", label: "学生导入", icon: Users, permission: "MANAGE_TEAMS" },
+      { href: "/admin/students", label: "学生管理", icon: Users, permission: "MANAGE_TEAMS" },
+      { href: "/admin/registrations", label: "报名管理", icon: UserCheck, permission: "MANAGE_REGISTRATIONS" },
+      { href: "/admin/groups", label: "分组管理", icon: Users, permission: "MANAGE_TEAMS" },
+      { href: "/admin/staff", label: "工作人员", icon: UserPlus, permission: "MANAGE_STAFF" },
+    ],
+  },
+  {
+    label: "活动管理",
+    items: [
+      { href: "/admin/checkin", label: "签到管理", icon: UserCheck, permission: "MANAGE_SCHEDULE" },
+      { href: "/admin/schedule", label: "日程管理", icon: Calendar, permission: "MANAGE_SCHEDULE" },
+      { href: "/admin/announcements", label: "公告管理", icon: Megaphone, permission: "MANAGE_ANNOUNCEMENTS" },
+      { href: "/admin/scores", label: "积分管理", icon: Trophy, permission: "MANAGE_SCORES" },
+      { href: "/admin/materials", label: "物资管理", icon: Package, permission: "MANAGE_MATERIALS" },
+      { href: "/admin/rotation", label: "轮转排班", icon: Repeat, permission: "MANAGE_ROTATION" },
+      { href: "/admin/treasure", label: "寻宝管理", icon: Map, permission: "MANAGE_TREASURE" },
+    ],
+  },
+  {
+    label: "系统管理",
+    items: [
+      { href: "/admin/content", label: "内容管理", icon: Edit3, permission: "MANAGE_SETTINGS" },
+      { href: "/admin/feedbacks", label: "反馈管理", icon: MessageSquare, permission: "VIEW_FEEDBACKS" },
+      { href: "/admin/logs", label: "活动日志", icon: FileText, permission: "VIEW_LOGS" },
+      { href: "/admin/permissions", label: "权限管理", icon: KeyRound, permission: "MANAGE_SETTINGS" },
+      { href: "/admin/admins", label: "管理员管理", icon: UserCog, permission: "MANAGE_ADMINS" },
+      { href: "/admin/backup", label: "数据备份", icon: Database, permission: "MANAGE_SETTINGS" },
+      { href: "/admin/notifications", label: "通知发送", icon: Bell, permission: "MANAGE_ANNOUNCEMENTS" },
+      { href: "/admin/settings", label: "系统设置", icon: Settings, permission: "MANAGE_SETTINGS" },
+    ],
+  },
 ];
 
 export default function AdminLayout({
@@ -96,6 +139,18 @@ export default function AdminLayout({
       if (!seen) {
         setShowTutorial(true);
       }
+    }
+  }, [activeTab]);
+
+  const [stats, setStats] = useState<any>(null);
+
+  // Fetch dashboard stats
+  useEffect(() => {
+    if (activeTab === "home") {
+      fetch("/api/admin/dashboard/stats")
+        .then(r => r.json())
+        .then(data => setStats(data))
+        .catch(() => {});
     }
   }, [activeTab]);
 
@@ -152,15 +207,15 @@ export default function AdminLayout({
               </div>
               <div className="grid grid-cols-3 gap-3 mt-4">
                 <div className="bg-white/10 rounded-xl p-2.5 text-center">
-                  <p className="text-lg font-bold">--</p>
+                  <p className="text-lg font-bold">{stats?.approvedRegistrations ?? "--"}</p>
                   <p className="text-[10px] text-white/60">报名</p>
                 </div>
                 <div className="bg-white/10 rounded-xl p-2.5 text-center">
-                  <p className="text-lg font-bold">--</p>
+                  <p className="text-lg font-bold">{stats?.totalCheckins ?? "--"}</p>
                   <p className="text-[10px] text-white/60">签到</p>
                 </div>
                 <div className="bg-white/10 rounded-xl p-2.5 text-center">
-                  <p className="text-lg font-bold">--</p>
+                  <p className="text-lg font-bold">{stats?.totalTeams ?? "--"}</p>
                   <p className="text-[10px] text-white/60">队伍</p>
                 </div>
               </div>
@@ -610,40 +665,3 @@ export default function AdminLayout({
     </div>
   );
 }
-
-const navGroups = [
-  {
-    label: "核心管理",
-    items: [
-      { href: "/admin", label: "仪表盘", icon: LayoutDashboard, permission: null },
-      { href: "/admin/import", label: "学生导入", icon: Users, permission: "MANAGE_TEAMS" },
-      { href: "/admin/students", label: "学生管理", icon: Users, permission: "MANAGE_TEAMS" },
-      { href: "/admin/registrations", label: "报名管理", icon: UserCheck, permission: "MANAGE_REGISTRATIONS" },
-      { href: "/admin/groups", label: "分组管理", icon: Users, permission: "MANAGE_TEAMS" },
-      { href: "/admin/staff", label: "工作人员", icon: UserPlus, permission: "MANAGE_STAFF" },
-    ],
-  },
-  {
-    label: "活动管理",
-    items: [
-      { href: "/admin/checkin", label: "签到管理", icon: UserCheck, permission: "MANAGE_SCHEDULE" },
-      { href: "/admin/schedule", label: "日程管理", icon: Calendar, permission: "MANAGE_SCHEDULE" },
-      { href: "/admin/announcements", label: "公告管理", icon: Megaphone, permission: "MANAGE_ANNOUNCEMENTS" },
-      { href: "/admin/scores", label: "积分管理", icon: Trophy, permission: "MANAGE_SCORES" },
-      { href: "/admin/materials", label: "物资管理", icon: Package, permission: "MANAGE_MATERIALS" },
-      { href: "/admin/rotation", label: "轮转排班", icon: Repeat, permission: "MANAGE_ROTATION" },
-      { href: "/admin/treasure", label: "寻宝管理", icon: Map, permission: "MANAGE_TREASURE" },
-    ],
-  },
-  {
-    label: "系统管理",
-    items: [
-      { href: "/admin/content", label: "内容管理", icon: Edit3, permission: "MANAGE_SETTINGS" },
-      { href: "/admin/feedbacks", label: "反馈管理", icon: MessageSquare, permission: "VIEW_FEEDBACKS" },
-      { href: "/admin/logs", label: "活动日志", icon: FileText, permission: "VIEW_LOGS" },
-      { href: "/admin/permissions", label: "权限管理", icon: KeyRound, permission: "MANAGE_SETTINGS" },
-      { href: "/admin/admins", label: "管理员管理", icon: UserCog, permission: "MANAGE_ADMINS" },
-      { href: "/admin/settings", label: "系统设置", icon: Settings, permission: "MANAGE_SETTINGS" },
-    ],
-  },
-];

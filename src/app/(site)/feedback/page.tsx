@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Star,
   Send,
@@ -12,15 +12,23 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/Toast";
 
 export default function FeedbackPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const { success, error: showError } = useToast();
   const [ratings, setRatings] = useState({ overall: 0, content: 0, organization: 0 });
   const [hoveredRatings, setHoveredRatings] = useState({ overall: 0, content: 0, organization: 0 });
   const [suggestion, setSuggestion] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (sessionStatus === "unauthenticated") {
+      router.push("/login?callbackUrl=/feedback");
+    }
+  }, [sessionStatus, router]);
 
   const handleRating = (category: keyof typeof ratings, value: number) => {
     setRatings((prev) => ({ ...prev, [category]: value }));
@@ -28,11 +36,11 @@ export default function FeedbackPage() {
 
   const handleSubmit = async () => {
     if (ratings.overall === 0 || ratings.content === 0 || ratings.organization === 0) {
-      alert("请完成所有评分项");
+      showError("请完成所有评分项");
       return;
     }
     if (!suggestion.trim()) {
-      alert("请填写建议或感想");
+      showError("请填写建议或感想");
       return;
     }
     setIsSubmitting(true);
@@ -49,21 +57,26 @@ export default function FeedbackPage() {
       });
 
       if (!res.ok) {
-        alert("提交失败，请重试");
+        const err = await res.json().catch(() => ({}));
+        showError("提交失败", err.error || "请重试");
         return;
       }
 
       setSubmitted(true);
+      success("反馈提交成功");
     } catch {
-      alert("网络错误，请稍后重试");
+      showError("网络错误", "请稍后重试");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (sessionStatus === "unauthenticated") {
-    router.push("/login?callbackUrl=/feedback");
-    return null;
+  if (sessionStatus === "loading" || sessionStatus === "unauthenticated") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50/30 via-white to-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+      </div>
+    );
   }
 
   if (submitted) {
@@ -144,7 +157,7 @@ export default function FeedbackPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
 
             <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">

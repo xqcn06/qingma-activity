@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,6 +20,7 @@ import {
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 type CheckinMethod = "GPS" | "QR" | "CODE";
 type SessionType = "FIRST" | "SECOND";
@@ -38,6 +39,9 @@ interface CheckinStatus {
     startTime: string;
     endTime: string;
     hasFence: boolean;
+    fenceCenterLat: number | null;
+    fenceCenterLng: number | null;
+    fenceRadius: number | null;
   };
 }
 
@@ -52,223 +56,20 @@ const METHOD_LABELS: Record<CheckinMethod, string> = {
   CODE: "验证码签到",
 };
 
-export default function CheckinPage() {
-  const { data: session, status: sessionStatus } = useSession();
-  const router = useRouter();
+// 独立组件 - 防止重新渲染导致焦点丢失
+interface GpsCheckinCardProps {
+  gpsCoords: { lat: number; lng: number } | null;
+  gpsLoading: boolean;
+  gpsError: string | null;
+  distance: number | null;
+  inFence: boolean | null;
+  submitting: boolean;
+  onDetectLocation: () => void;
+  onCheckin: () => void;
+}
 
-  const [selectedSession, setSelectedSession] = useState<SessionType>("FIRST");
-  const [activeTab, setActiveTab] = useState<CheckinMethod>("GPS");
-  const [status, setStatus] = useState<CheckinStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-
-  // GPS state
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
-  const [gpsError, setGpsError] = useState<string | null>(null);
-  const [distance, setDistance] = useState<number | null>(null);
-  const [inFence, setInFence] = useState<boolean | null>(null);
-
-  // QR state
-  const [qrToken, setQrToken] = useState("");
-
-  // Code state
-  const [code, setCode] = useState("");
-
-  useEffect(() => {
-    if (sessionStatus === "unauthenticated") {
-      router.push("/login?callbackUrl=/checkin");
-      return;
-    }
-    if (sessionStatus === "authenticated") {
-      fetchStatus();
-    }
-  }, [sessionStatus, selectedSession, router]);
-
-  const fetchStatus = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/checkin?session=${selectedSession}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        if (data.checkedIn) {
-          setSuccess(true);
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const haversineDistance = useCallback(
-    (lat1: number, lon1: number, lat2: number, lon2: number) => {
-      const R = 6371000;
-      const dLat = ((lat2 - lat1) * Math.PI) / 180;
-      const dLon = ((lon2 - lon1) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat1 * Math.PI) / 180) *
-          Math.cos((lat2 * Math.PI) / 180) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    },
-    []
-  );
-
-  const detectLocation = useCallback(() => {
-    setGpsLoading(true);
-    setGpsError(null);
-    setGpsCoords(null);
-    setDistance(null);
-    setInFence(null);
-
-    if (!navigator.geolocation) {
-      setGpsError("您的浏览器不支持地理定位");
-      setGpsLoading(false);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setGpsCoords({ lat: latitude, lng: longitude });
-        setGpsLoading(false);
-
-        if (status?.config?.hasFence) {
-          try {
-            const res = await fetch(`/api/checkin?session=${selectedSession}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data.record?.lat != null && data.record?.lng != null) {
-                const dist = haversineDistance(latitude, longitude, data.record.lat, data.record.lng);
-                setDistance(Math.round(dist));
-                setInFence(dist <= 200);
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-      },
-      () => {
-        setGpsError("无法获取位置信息，请允许定位权限");
-        setGpsLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }, [status, selectedSession, haversineDistance]);
-
-  useEffect(() => {
-    if (activeTab === "GPS" && !gpsCoords && !gpsLoading) {
-      detectLocation();
-    }
-  }, [activeTab]);
-
-  const handleGpsCheckin = async () => {
-    if (!gpsCoords) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "GPS",
-          lat: gpsCoords.lat,
-          lng: gpsCoords.lng,
-          session: selectedSession,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        alert(json.error || "签到失败");
-        return;
-      }
-
-      setSuccess(true);
-      fetchStatus();
-    } catch {
-      alert("签到失败，请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleQrCheckin = async () => {
-    if (!qrToken.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "QR",
-          qrToken: qrToken.trim(),
-          session: selectedSession,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        alert(json.error || "签到失败");
-        return;
-      }
-
-      setSuccess(true);
-      fetchStatus();
-    } catch {
-      alert("签到失败，请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCodeCheckin = async () => {
-    if (!code.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/checkin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: "CODE",
-          code: code.trim(),
-          session: selectedSession,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        alert(json.error || "签到失败");
-        return;
-      }
-
-      setSuccess(true);
-      fetchStatus();
-    } catch {
-      alert("签到失败，请稍后重试");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading || sessionStatus === "loading") {
-    return (
-      <div className="pt-16 lg:pt-24 min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-red-600" />
-      </div>
-    );
-  }
-
-  const user = session?.user as any;
-
-  const GpsCheckinCard = () => (
+function GpsCheckinCard({ gpsCoords, gpsLoading, gpsError, distance, inFence, submitting, onDetectLocation, onCheckin }: GpsCheckinCardProps) {
+  return (
     <div className="space-y-4">
       <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
         <Navigation className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
@@ -293,7 +94,7 @@ export default function CheckinPage() {
           <div>
             <p className="text-sm text-red-700 font-medium">{gpsError}</p>
             <button
-              onClick={detectLocation}
+              onClick={onDetectLocation}
               className="text-sm text-red-600 underline mt-1"
             >
               重新定位
@@ -332,7 +133,7 @@ export default function CheckinPage() {
               size="lg"
               fullWidth
               loading={submitting}
-              onClick={handleGpsCheckin}
+              onClick={onCheckin}
             >
               <CheckCircle2 className="w-5 h-5" />
               可以签到
@@ -351,7 +152,7 @@ export default function CheckinPage() {
               size="lg"
               fullWidth
               loading={submitting}
-              onClick={handleGpsCheckin}
+              onClick={onCheckin}
             >
               <MapPin className="w-5 h-5" />
               立即签到
@@ -361,8 +162,17 @@ export default function CheckinPage() {
       )}
     </div>
   );
+}
 
-  const QrCheckinCard = () => (
+interface QrCheckinCardProps {
+  qrToken: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}
+
+function QrCheckinCard({ qrToken, onChange, onSubmit, submitting }: QrCheckinCardProps) {
+  return (
     <div className="space-y-4">
       <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
         <QrCode className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
@@ -378,7 +188,7 @@ export default function CheckinPage() {
         label="Token"
         placeholder="请输入二维码中的 Token"
         value={qrToken}
-        onChange={(e) => setQrToken(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         leftIcon={<QrCode className="w-5 h-5" />}
       />
 
@@ -388,15 +198,24 @@ export default function CheckinPage() {
         fullWidth
         loading={submitting}
         disabled={!qrToken.trim()}
-        onClick={handleQrCheckin}
+        onClick={onSubmit}
       >
         <CheckCircle2 className="w-5 h-5" />
         确认签到
       </Button>
     </div>
   );
+}
 
-  const CodeCheckinCard = () => (
+interface CodeCheckinCardProps {
+  code: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}
+
+function CodeCheckinCard({ code, onChange, onSubmit, submitting }: CodeCheckinCardProps) {
+  return (
     <div className="space-y-4">
       <div className="bg-blue-50 rounded-xl p-4 flex items-start gap-3">
         <ShieldCheck className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
@@ -412,7 +231,7 @@ export default function CheckinPage() {
         label="验证码"
         placeholder="请输入验证码"
         value={code}
-        onChange={(e) => setCode(e.target.value.toUpperCase())}
+        onChange={(e) => onChange(e.target.value.toUpperCase())}
         leftIcon={<ShieldCheck className="w-5 h-5" />}
         maxLength={8}
         className="uppercase tracking-widest text-center text-xl font-mono"
@@ -424,13 +243,229 @@ export default function CheckinPage() {
         fullWidth
         loading={submitting}
         disabled={!code.trim()}
-        onClick={handleCodeCheckin}
+        onClick={onSubmit}
       >
         <CheckCircle2 className="w-5 h-5" />
         确认签到
       </Button>
     </div>
   );
+}
+
+export default function CheckinPage() {
+  const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
+  const { success, error: showError } = useToast();
+
+  const [selectedSession, setSelectedSession] = useState<SessionType>("FIRST");
+  const [activeTab, setActiveTab] = useState<CheckinMethod>("GPS");
+  const [status, setStatus] = useState<CheckinStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [successState, setSuccessState] = useState(false);
+
+  // GPS state
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [distance, setDistance] = useState<number | null>(null);
+  const [inFence, setInFence] = useState<boolean | null>(null);
+
+  // QR state
+  const [qrToken, setQrToken] = useState("");
+
+  // Code state
+  const [code, setCode] = useState("");
+
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/checkin?session=${selectedSession}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data);
+        if (data.checkedIn) {
+          setSuccessState(true);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedSession]);
+
+  useEffect(() => {
+    if (sessionStatus === "unauthenticated") {
+      router.push("/login?callbackUrl=/checkin");
+      return;
+    }
+    if (sessionStatus === "authenticated") {
+      fetchStatus();
+    }
+  }, [sessionStatus, fetchStatus, router]);
+
+  const haversineDistance = useCallback(
+    (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371000;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    },
+    []
+  );
+
+  const detectLocation = useCallback(() => {
+    setGpsLoading(true);
+    setGpsError(null);
+    setGpsCoords(null);
+    setDistance(null);
+    setInFence(null);
+
+    if (!navigator.geolocation) {
+      setGpsError("您的浏览器不支持地理定位");
+      setGpsLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setGpsCoords({ lat: latitude, lng: longitude });
+        setGpsLoading(false);
+
+        // 使用配置中的围栏中心坐标计算距离
+        if (status?.config?.hasFence && status.config.fenceCenterLat && status.config.fenceCenterLng) {
+          const dist = haversineDistance(
+            latitude,
+            longitude,
+            status.config.fenceCenterLat,
+            status.config.fenceCenterLng
+          );
+          setDistance(Math.round(dist));
+          const radius = status.config.fenceRadius || 200;
+          setInFence(dist <= radius);
+        }
+      },
+      () => {
+        setGpsError("无法获取位置信息，请允许定位权限");
+        setGpsLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [status, haversineDistance]);
+
+  useEffect(() => {
+    if (activeTab === "GPS" && !gpsCoords && !gpsLoading) {
+      detectLocation();
+    }
+  }, [activeTab, gpsCoords, gpsLoading, detectLocation]);
+
+  const handleGpsCheckin = async () => {
+    if (!gpsCoords) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method: "GPS",
+          lat: gpsCoords.lat,
+          lng: gpsCoords.lng,
+          session: selectedSession,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        showError("签到失败", json.error);
+        return;
+      }
+
+      setSuccessState(true);
+      success("签到成功");
+      fetchStatus();
+    } catch {
+      showError("签到失败", "请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleQrCheckin = async () => {
+    if (!qrToken.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method: "QR",
+          qrToken: qrToken.trim(),
+          session: selectedSession,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        showError("签到失败", json.error);
+        return;
+      }
+
+      setSuccessState(true);
+      success("签到成功");
+      fetchStatus();
+    } catch {
+      showError("签到失败", "请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCodeCheckin = async () => {
+    if (!code.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          method: "CODE",
+          code: code.trim(),
+          session: selectedSession,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        showError("签到失败", json.error);
+        return;
+      }
+
+      setSuccessState(true);
+      success("签到成功");
+      fetchStatus();
+    } catch {
+      showError("签到失败", "请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading || sessionStatus === "loading") {
+    return (
+      <div className="pt-16 lg:pt-24 min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gradient-to-br from-red-50/30 via-white to-white min-h-screen pb-24 lg:pb-12">
@@ -452,7 +487,7 @@ export default function CheckinPage() {
                     key={s}
                     onClick={() => {
                       setSelectedSession(s);
-                      setSuccess(false);
+                      setSuccessState(false);
                       setGpsCoords(null);
                       setQrToken("");
                       setCode("");
@@ -471,7 +506,7 @@ export default function CheckinPage() {
 
             {/* Already checked in */}
             <AnimatePresence mode="wait">
-              {success && status?.record ? (
+              {successState && status?.record ? (
                 <motion.div
                   key="success"
                   initial={{ opacity: 0, scale: 0.95 }}
@@ -559,21 +594,65 @@ export default function CheckinPage() {
 
                   {/* Mobile: tabbed view */}
                   <div className="lg:hidden">
-                    {activeTab === "GPS" && <GpsCheckinCard />}
-                    {activeTab === "QR" && <QrCheckinCard />}
-                    {activeTab === "CODE" && <CodeCheckinCard />}
+                    {activeTab === "GPS" && (
+                      <GpsCheckinCard
+                        gpsCoords={gpsCoords}
+                        gpsLoading={gpsLoading}
+                        gpsError={gpsError}
+                        distance={distance}
+                        inFence={inFence}
+                        submitting={submitting}
+                        onDetectLocation={detectLocation}
+                        onCheckin={handleGpsCheckin}
+                      />
+                    )}
+                    {activeTab === "QR" && (
+                      <QrCheckinCard
+                        qrToken={qrToken}
+                        onChange={setQrToken}
+                        onSubmit={handleQrCheckin}
+                        submitting={submitting}
+                      />
+                    )}
+                    {activeTab === "CODE" && (
+                      <CodeCheckinCard
+                        code={code}
+                        onChange={setCode}
+                        onSubmit={handleCodeCheckin}
+                        submitting={submitting}
+                      />
+                    )}
                   </div>
 
                   {/* Desktop: 3-column layout */}
                   <div className="hidden lg:grid lg:grid-cols-3 gap-6">
                     <div className="bg-gray-50 rounded-xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
-                      <GpsCheckinCard />
+                      <GpsCheckinCard
+                        gpsCoords={gpsCoords}
+                        gpsLoading={gpsLoading}
+                        gpsError={gpsError}
+                        distance={distance}
+                        inFence={inFence}
+                        submitting={submitting}
+                        onDetectLocation={detectLocation}
+                        onCheckin={handleGpsCheckin}
+                      />
                     </div>
                     <div className="bg-gray-50 rounded-xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
-                      <QrCheckinCard />
+                      <QrCheckinCard
+                        qrToken={qrToken}
+                        onChange={setQrToken}
+                        onSubmit={handleQrCheckin}
+                        submitting={submitting}
+                      />
                     </div>
                     <div className="bg-gray-50 rounded-xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
-                      <CodeCheckinCard />
+                      <CodeCheckinCard
+                        code={code}
+                        onChange={setCode}
+                        onSubmit={handleCodeCheckin}
+                        submitting={submitting}
+                      />
                     </div>
                   </div>
                 </motion.div>
@@ -582,7 +661,7 @@ export default function CheckinPage() {
           </motion.div>
 
           {/* Status info card */}
-          {!success && status?.checkedIn && status?.record && (
+          {!successState && status?.checkedIn && status?.record && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -622,7 +701,7 @@ export default function CheckinPage() {
             </motion.div>
           )}
 
-          {!success && !status?.checkedIn && (
+          {!successState && !status?.checkedIn && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

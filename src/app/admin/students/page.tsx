@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 const ROLE_LABELS: Record<string, string> = {
   TEACHER: "老师",
@@ -42,6 +43,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function AdminStudents() {
+  const { success, error: showError } = useToast();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -98,7 +100,7 @@ export default function AdminStudents() {
 
   const handleAddUser = async () => {
     if (!formData.name || !formData.studentId || !formData.phone) {
-      alert("姓名、学号、手机号为必填");
+      showError("姓名、学号、手机号为必填");
       return;
     }
     setActionLoading(true);
@@ -111,13 +113,14 @@ export default function AdminStudents() {
       if (res.ok) {
         setShowAddModal(false);
         setFormData({ name: "", studentId: "", grade: "", className: "", role: "STUDENT", phone: "", email: "", password: "" });
+        success("添加成功");
         fetchUsers();
       } else {
         const data = await res.json();
-        alert(data.error || "添加失败");
+        showError(data.error || "添加失败");
       }
     } catch {
-      alert("添加失败");
+      showError("添加失败");
     } finally {
       setActionLoading(false);
     }
@@ -135,13 +138,14 @@ export default function AdminStudents() {
       if (res.ok) {
         setShowEditModal(false);
         setEditingUser(null);
+        success("编辑成功");
         fetchUsers();
       } else {
         const data = await res.json();
-        alert(data.error || "编辑失败");
+        showError(data.error || "编辑失败");
       }
     } catch {
-      alert("编辑失败");
+      showError("编辑失败");
     } finally {
       setActionLoading(false);
     }
@@ -243,12 +247,22 @@ export default function AdminStudents() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `学生数据_${new Date().toLocaleDateString()}.xlsx`;
+        const disposition = res.headers.get("Content-Disposition");
+        let fileName = `学生数据_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        if (disposition) {
+          const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+          if (match) fileName = decodeURIComponent(match[1].replace(/"/g, ""));
+        }
+        a.download = fileName;
         a.click();
         window.URL.revokeObjectURL(url);
+        success("导出成功");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showError("导出失败", err.error);
       }
-    } catch {
-      // ignore
+    } catch (e: any) {
+      showError("导出失败", e.message);
     }
   };
 

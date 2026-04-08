@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { parseAndValidateStudents } from "@/lib/excel-parser";
 import bcrypt from "bcryptjs";
@@ -6,10 +6,8 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const contentType = req.headers.get("content-type") || "";
     if (!contentType.includes("multipart/form-data")) {
@@ -38,7 +36,7 @@ export async function POST(req: Request) {
     }
 
     // 创建导入批次记录
-    const userId = (session.user as any).id as string;
+    const userId = authResult.userId;
 
     const batch = await prisma.importBatch.create({
       data: {

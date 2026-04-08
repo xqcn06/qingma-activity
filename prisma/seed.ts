@@ -291,6 +291,9 @@ async function main() {
       slug: 'home',
       title: '首页',
       description: '网站主页',
+      type: 'home',
+      status: 'published',
+      publishedAt: new Date(),
       isEnabled: true,
       sortOrder: 1,
     },
@@ -305,11 +308,12 @@ async function main() {
   ]
 
   for (const block of homeBlocks) {
-    await prisma.pageBlock.upsert({
-      where: { key: block.key },
-      update: {},
-      create: { pageId: homePage.id, ...block },
-    })
+    const existing = await prisma.pageBlock.findFirst({ where: { key: block.key } })
+    if (existing) {
+      await prisma.pageBlock.update({ where: { id: existing.id }, data: block })
+    } else {
+      await prisma.pageBlock.create({ data: { pageId: homePage.id, ...block } })
+    }
   }
   console.log(`✅ 首页内容块创建（${homeBlocks.length}个）`)
 
@@ -321,6 +325,9 @@ async function main() {
       slug: 'info',
       title: '活动信息',
       description: '活动详细信息',
+      type: 'info',
+      status: 'published',
+      publishedAt: new Date(),
       isEnabled: true,
       sortOrder: 2,
     },
@@ -336,13 +343,125 @@ async function main() {
   ]
 
   for (const block of infoBlocks) {
-    await prisma.pageBlock.upsert({
-      where: { key: block.key },
-      update: {},
-      create: { pageId: infoPage.id, ...block },
-    })
+    const existing = await prisma.pageBlock.findFirst({ where: { key: block.key } })
+    if (existing) {
+      await prisma.pageBlock.update({ where: { id: existing.id }, data: block })
+    } else {
+      await prisma.pageBlock.create({ data: { pageId: infoPage.id, ...block } })
+    }
   }
   console.log(`✅ 活动信息页内容块创建（${infoBlocks.length}个）`)
+
+  // 日程安排页
+  const schedulePage = await prisma.page.upsert({
+    where: { slug: 'schedule' },
+    update: {},
+    create: {
+      slug: 'schedule',
+      title: '日程安排',
+      description: '活动详细流程',
+      type: 'schedule',
+      status: 'published',
+      publishedAt: new Date(),
+      isEnabled: true,
+      sortOrder: 3,
+    },
+  })
+
+  const schedulePhases = [
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.1',
+      title: '赛前准备',
+      sortOrder: 1,
+      config: JSON.stringify({ color: 'bg-blue-600' }),
+      content: JSON.stringify([
+        { time: '09:30-11:30', title: '场地搭建与物料准备', location: '操场', desc: '确认4个游戏站位置、划定躲避球场地边界线、放置寻宝积分卡' },
+        { time: '11:30-12:00', title: '工作人员到位与岗前确认', location: '各岗位', desc: '工作人员签到，领取工作证，确认对讲群组正常' },
+        { time: '12:00-12:25', title: '参赛队伍签到与候场', location: '操场主席台前', desc: '16支参赛队伍到场签到，领取队伍臂贴' },
+        { time: '12:25-12:30', title: '全员候场与最终设备检查', location: '开幕区', desc: '所有参赛队伍按指定站位集合，设备最终核对' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.2',
+      title: '开幕仪式',
+      sortOrder: 2,
+      config: JSON.stringify({ color: 'bg-yellow-500' }),
+      content: JSON.stringify([
+        { time: '12:30-12:45', title: '开幕讲话与活动启动', location: '操场主席台', desc: '主持人开场、代表致辞、宣读活动规则、宣布启动' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.3',
+      title: '第一轮：同步轮转积分赛',
+      sortOrder: 3,
+      config: JSON.stringify({ color: 'bg-purple-600' }),
+      content: JSON.stringify([
+        { time: '12:45-13:05', title: '第一轮轮转', location: '4个游戏站', desc: '8组队伍进4个游戏站，每4组对决' },
+        { time: '13:05-13:25', title: '第二轮轮转', location: '4个游戏站', desc: '所有队伍按固定轮转顺序进入下一个游戏站' },
+        { time: '13:25-13:45', title: '第三轮轮转', location: '4个游戏站', desc: '完成第三轮游戏站轮转' },
+        { time: '13:45-14:05', title: '第四轮轮转', location: '4个游戏站', desc: '完成最后一轮，所有队伍完成4个游戏项目' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.4',
+      title: '中场休整',
+      sortOrder: 4,
+      config: JSON.stringify({ color: 'bg-gray-500' }),
+      content: JSON.stringify([
+        { time: '14:05-14:10', title: '中场休整与寻宝规则宣讲', location: '操场', desc: '参赛队伍休息，主持人宣讲第二轮寻宝赛规则' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.5',
+      title: '第二轮："械"逅寻宝赛',
+      sortOrder: 5,
+      config: JSON.stringify({ color: 'bg-red-600' }),
+      content: JSON.stringify([
+        { time: '14:10-14:50', title: '校园寻宝积分环节', location: '二期校园', desc: '16支队伍同时出发，凭线索卡在指定区域寻找积分卡' },
+        { time: '14:50-15:05', title: '寻宝结束与最终积分核对', location: '积分登记处', desc: '计时结束，完成所有队伍积分统计和总排名核对' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.6',
+      title: '闭幕与转场',
+      sortOrder: 6,
+      config: JSON.stringify({ color: 'bg-orange-500' }),
+      content: JSON.stringify([
+        { time: '15:05-15:20', title: '第一场结束，准备第二场', location: '操场', desc: '总结问题，组织第一场队伍有序离场' },
+        { time: '15:20-15:35', title: '场地复位与第二场前置准备', location: '各游戏站', desc: '道具复位、重置积分卡位置、第二场队伍签到' },
+      ]),
+    },
+    {
+      type: 'schedule-phase',
+      key: 'schedule.phase.7',
+      title: '第二场',
+      sortOrder: 7,
+      config: JSON.stringify({ color: 'bg-green-600' }),
+      content: JSON.stringify([
+        { time: '15:35-15:50', title: '第二场开幕与规则宣讲', location: '操场主席台', desc: '主持人开场，重申活动核心规则' },
+        { time: '15:50-17:10', title: '第一轮轮转积分赛（4轮）', location: '4个游戏站', desc: '流程同第一场，完成4轮游戏站轮转' },
+        { time: '17:10-17:15', title: '中场休整与寻宝规则宣讲', location: '操场', desc: '中场休息，寻宝规则重申' },
+        { time: '17:15-17:55', title: '校园寻宝积分环节', location: '二期校园', desc: '第二场寻宝赛' },
+        { time: '17:55-18:00', title: '第二场成绩整理与退场', location: '操场', desc: '感谢全体参赛队伍与工作人员，组织退场' },
+      ]),
+    },
+  ]
+
+  for (const block of schedulePhases) {
+    const existing = await prisma.pageBlock.findFirst({ where: { key: block.key } })
+    if (existing) {
+      await prisma.pageBlock.update({ where: { id: existing.id }, data: block })
+    } else {
+      await prisma.pageBlock.create({ data: { pageId: schedulePage.id, ...block } })
+    }
+  }
+  console.log(`✅ 日程安排页内容块创建（${schedulePhases.length}个）`)
 
   // 全局设置页
   const settingsPage = await prisma.page.upsert({
@@ -352,6 +471,9 @@ async function main() {
       slug: 'settings',
       title: '全局设置',
       description: '网站全局配置',
+      type: 'settings',
+      status: 'published',
+      publishedAt: new Date(),
       isEnabled: true,
       sortOrder: 99,
     },
@@ -365,11 +487,12 @@ async function main() {
   ]
 
   for (const block of settingsBlocks) {
-    await prisma.pageBlock.upsert({
-      where: { key: block.key },
-      update: {},
-      create: { pageId: settingsPage.id, ...block },
-    })
+    const existing = await prisma.pageBlock.findFirst({ where: { key: block.key } })
+    if (existing) {
+      await prisma.pageBlock.update({ where: { id: existing.id }, data: block })
+    } else {
+      await prisma.pageBlock.create({ data: { pageId: settingsPage.id, ...block } })
+    }
   }
   console.log(`✅ 全局设置内容块创建（${settingsBlocks.length}个）`)
 

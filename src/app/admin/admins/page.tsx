@@ -19,6 +19,7 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 const ROLE_LABELS: Record<string, string> = {
   TEACHER: "老师",
@@ -34,6 +35,7 @@ const ROLE_OPTIONS = [
 export default function AdminAdmins() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { success, error: showError } = useToast();
   const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -87,7 +89,7 @@ export default function AdminAdmins() {
 
   const handleAdd = async () => {
     if (!formData.name || !formData.studentId || !formData.phone) {
-      alert("姓名、学号、手机号为必填");
+      showError("姓名、学号、手机号为必填");
       return;
     }
     setActionLoading(true);
@@ -100,13 +102,14 @@ export default function AdminAdmins() {
       if (res.ok) {
         setShowAddModal(false);
         setFormData({ name: "", studentId: "", grade: "", className: "", role: "ADMIN", phone: "", email: "" });
+        success("管理员添加成功");
         fetchAdmins();
       } else {
         const data = await res.json();
-        alert(data.error || "添加失败");
+        showError(data.error || "添加失败");
       }
     } catch {
-      alert("添加失败");
+      showError("添加失败");
     } finally {
       setActionLoading(false);
     }
@@ -139,13 +142,14 @@ export default function AdminAdmins() {
       if (res.ok) {
         setShowEditModal(false);
         setEditingAdmin(null);
+        success("编辑成功");
         fetchAdmins();
       } else {
         const data = await res.json();
-        alert(data.error || "编辑失败");
+        showError(data.error || "编辑失败");
       }
     } catch {
-      alert("编辑失败");
+      showError("编辑失败");
     } finally {
       setActionLoading(false);
     }
@@ -169,13 +173,14 @@ export default function AdminAdmins() {
       if (res.ok) {
         setShowDeleteModal(false);
         setTargetAdmin(null);
+        success("已禁用");
         fetchAdmins();
       } else {
         const data = await res.json();
-        alert(data.error || "操作失败");
+        showError(data.error || "操作失败");
       }
     } catch {
-      alert("操作失败");
+      showError("操作失败");
     } finally {
       setActionLoading(false);
     }
@@ -199,13 +204,14 @@ export default function AdminAdmins() {
       if (res.ok) {
         setShowResetModal(false);
         setTargetAdmin(null);
+        success("密码已重置为 123456");
         fetchAdmins();
       } else {
         const data = await res.json();
-        alert(data.error || "重置失败");
+        showError(data.error || "重置失败");
       }
     } catch {
-      alert("重置失败");
+      showError("重置失败");
     } finally {
       setActionLoading(false);
     }

@@ -1,16 +1,17 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/permissions";
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const sessionParam = searchParams.get("session");
+    const userType = searchParams.get("userType");
+    const checkinSessionId = searchParams.get("checkinSessionId");
 
     if (!sessionParam || !["FIRST", "SECOND"].includes(sessionParam)) {
       return NextResponse.json({ error: "缺少或无效的 session 参数" }, { status: 400 });
@@ -24,10 +25,14 @@ export async function GET(req: Request) {
       },
     });
 
+    const studentWhere: any = { session: sessionParam as any, userType: "STUDENT" };
+    if (checkinSessionId) studentWhere.checkinSessionId = checkinSessionId;
+
     const studentRecords = await prisma.checkinRecord.findMany({
-      where: { session: sessionParam as any, userType: "STUDENT" },
+      where: studentWhere,
       include: {
         user: { select: { id: true, name: true, studentId: true, className: true, grade: true, role: true } },
+        checkinSession: { select: { id: true, name: true, status: true } },
       },
       orderBy: { checkedAt: "desc" },
     });
@@ -75,14 +80,13 @@ export async function GET(req: Request) {
       if (record.status === "LATE") teamStats[teamName].late++;
     }
 
-    // 未分组统计
     const ungroupedStudents = studentRegistrations.filter((reg) => !userIdToTeam.has(reg.userId));
-    const ungroupedChecked = uncheckedStudents.filter((s) => !userIdToTeam.has(s.userId)).length;
+    const ungroupedChecked = studentRecords.filter((r) => !userIdToTeam.has(r.userId)).length;
     if (ungroupedStudents.length > 0) {
       teamStats["未分组"] = {
         teamName: "未分组",
         total: ungroupedStudents.length,
-        checked: ungroupedStudents.length - ungroupedChecked,
+        checked: ungroupedChecked,
         onTime: studentRecords.filter((r) => !userIdToTeam.has(r.userId) && r.status === "ON_TIME").length,
         late: studentRecords.filter((r) => !userIdToTeam.has(r.userId) && r.status === "LATE").length,
       };
@@ -106,10 +110,14 @@ export async function GET(req: Request) {
       },
     });
 
+    const staffWhere: any = { session: sessionParam as any, userType: "STAFF" };
+    if (checkinSessionId) staffWhere.checkinSessionId = checkinSessionId;
+
     const staffRecords = await prisma.checkinRecord.findMany({
-      where: { session: sessionParam as any, userType: "STAFF" },
+      where: staffWhere,
       include: {
         user: { select: { id: true, name: true, studentId: true, className: true, phone: true } },
+        checkinSession: { select: { id: true, name: true, status: true } },
       },
       orderBy: { checkedAt: "desc" },
     });
@@ -171,13 +179,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
-    const { studentId, session: sessionParam } = body;
+    const { studentId, session: sessionParam, checkinSessionId } = body;
 
     if (!studentId || !sessionParam) {
       return NextResponse.json({ error: "缺少 studentId 或 session 参数" }, { status: 400 });
@@ -191,19 +197,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    // 判断用户类型：STAFF = 系统工作人员(STAFF/TEACHER/ADMIN) 或 有APPROVED的StaffAssignment
     const hasStaffAssignment = await prisma.staffAssignment.findFirst({
       where: { userId: user.id, status: "APPROVED" },
     });
     const userType = (user.role === "STAFF" || user.role === "TEACHER" || user.role === "ADMIN" || hasStaffAssignment) ? "STAFF" : "STUDENT";
 
-    const existing = await prisma.checkinRecord.findUnique({
-      where: {
-        userId_session: {
-          userId: user.id,
-          session: sessionParam as any,
-        },
-      },
+    const uniqueWhere: any = {
+      userId: user.id,
+      session: sessionParam as any,
+    };
+    if (checkinSessionId) {
+      uniqueWhere.checkinSessionId = checkinSessionId;
+    } else {
+      uniqueWhere.checkinSessionId = null;
+    }
+
+    const existing = await prisma.checkinRecord.findFirst({
+      where: uniqueWhere,
     });
 
     if (existing) {
@@ -217,6 +227,7 @@ export async function POST(req: Request) {
         userType,
         method: "MANUAL",
         status: "ON_TIME",
+        checkinSessionId: checkinSessionId || null,
       },
       include: {
         user: {

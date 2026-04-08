@@ -19,11 +19,13 @@ import {
   Filter,
   ChevronDown,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 const PRESET_ROLES = [
   { name: "主裁判", description: "负责比赛整体裁判工作", requiredCount: 2 },
@@ -61,10 +63,10 @@ const STATUS_OPTIONS = [
 ];
 
 export default function AdminStaff() {
+  const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState("roles");
   const [staffRoles, setStaffRoles] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
-  const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionFilter, setSessionFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -77,6 +79,7 @@ export default function AdminStaff() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigningItem, setAssigningItem] = useState<any>(null);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -90,7 +93,6 @@ export default function AdminStaff() {
       if (appsRes.ok) {
         const data = await appsRes.json();
         setApplications(data);
-        setAssignments(data.filter((a: any) => a.status === "APPROVED"));
       }
     } catch {
       // ignore
@@ -103,9 +105,35 @@ export default function AdminStaff() {
     fetchData();
   }, [fetchData]);
 
+  // Group assignments by user for multi-role display
+  const getUserAssignments = () => {
+    const approvedApps = applications.filter((a) => a.status === "APPROVED");
+    const userMap = new Map();
+    for (const app of approvedApps) {
+      const key = app.userId;
+      if (!userMap.has(key)) {
+        userMap.set(key, {
+          id: app.id,
+          userId: app.userId,
+          user: app.user,
+          session: app.session,
+          roles: [],
+        });
+      }
+      userMap.get(key).roles.push({
+        assignmentId: app.id,
+        roleId: app.staffRoleId,
+        roleName: app.staffRole.name,
+      });
+    }
+    return Array.from(userMap.values());
+  };
+
+  const userAssignments = getUserAssignments();
+
   const handleCreateRole = async () => {
     if (!roleFormData.name || !roleFormData.requiredCount) {
-      alert("岗位名称和所需人数为必填");
+      showError("岗位名称和所需人数为必填");
       return;
     }
     try {
@@ -123,12 +151,13 @@ export default function AdminStaff() {
         setRoleFormData({ name: "", description: "", requiredCount: "", session: "" });
         setEditingRole(null);
         fetchData();
+        success("岗位创建成功");
       } else {
         const data = await res.json();
-        alert(data.error || "创建失败");
+        showError("创建失败", data.error);
       }
     } catch {
-      alert("创建失败");
+      showError("创建失败");
     }
   };
 
@@ -150,12 +179,13 @@ export default function AdminStaff() {
         setRoleFormData({ name: "", description: "", requiredCount: "", session: "" });
         setEditingRole(null);
         fetchData();
+        success("岗位更新成功");
       } else {
         const data = await res.json();
-        alert(data.error || "编辑失败");
+        showError("编辑失败", data.error);
       }
     } catch {
-      alert("编辑失败");
+      showError("编辑失败");
     }
   };
 
@@ -165,30 +195,112 @@ export default function AdminStaff() {
       if (res.ok) {
         setShowDeleteConfirm(null);
         fetchData();
+        success("岗位已删除");
       } else {
         const data = await res.json();
-        alert(data.error || "删除失败");
+        showError("删除失败", data.error);
       }
     } catch {
-      alert("删除失败");
+      showError("删除失败");
     }
   };
 
   const handleApplicationAction = async (id: string, status: string, staffRoleId?: string) => {
     setProcessingId(id);
     try {
-      const body: Record<string, string> = { id, status };
+      const body: Record<string, any> = { id, status };
       if (staffRoleId) body.staffRoleId = staffRoleId;
       const res = await fetch("/api/admin/staff-applications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        success(status === "APPROVED" ? "已通过" : status === "REJECTED" ? "已拒绝" : "已重置");
+        fetchData();
+      } else {
+        const data = await res.json();
+        showError("操作失败", data.error);
+      }
     } catch {
-      // ignore
+      showError("操作失败");
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const openAssignModal = (item: any) => {
+    setAssigningItem(item);
+    // Pre-select current roles
+    const currentRoles = item.roles ? item.roles.map((r: any) => r.roleId) : [item.staffRoleId];
+    setSelectedRoles(currentRoles);
+    setShowAssignModal(true);
+  };
+
+  const toggleRole = (roleId: string) => {
+    setSelectedRoles((prev) =>
+      prev.includes(roleId) ? prev.filter((r) => r !== roleId) : [...prev, roleId]
+    );
+  };
+
+  const handleMultiAssign = async () => {
+    if (!assigningItem || selectedRoles.length === 0) {
+      showError("请至少选择一个岗位");
+      return;
+    }
+    setProcessingId(assigningItem.id);
+    try {
+      const res = await fetch("/api/admin/staff-applications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: assigningItem.id, staffRoleIds: selectedRoles }),
+      });
+      if (res.ok) {
+        success("岗位分配成功");
+        setShowAssignModal(false);
+        setAssigningItem(null);
+        setSelectedRoles([]);
+        fetchData();
+      } else {
+        const data = await res.json();
+        showError("分配失败", data.error);
+      }
+    } catch {
+      showError("分配失败");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleRemoveRole = async (assignmentId: string, roleName: string) => {
+    if (!confirm(`确定移除 "${roleName}" 岗位？`)) return;
+    try {
+      const res = await fetch(`/api/admin/staff-applications?id=${assignmentId}`, { method: "DELETE" });
+      if (res.ok) {
+        success("已移除岗位");
+        fetchData();
+      } else {
+        showError("移除失败");
+      }
+    } catch {
+      showError("移除失败");
+    }
+  };
+
+  const handleRemoveAllRoles = async (userId: string, userName: string) => {
+    if (!confirm(`确定取消 "${userName}" 的所有工作人员岗位？`)) return;
+    const user = userAssignments.find((ua) => ua.userId === userId);
+    if (!user) return;
+    try {
+      await Promise.all(
+        user.roles.map((role: any) =>
+          fetch(`/api/admin/staff-applications?id=${role.assignmentId}`, { method: "DELETE" })
+        )
+      );
+      success(`已取消 "${userName}" 的所有工作人员岗位`);
+      fetchData();
+    } catch {
+      showError("操作失败");
     }
   };
 
@@ -203,47 +315,21 @@ export default function AdminStaff() {
     setShowRoleModal(true);
   };
 
-  const openAssignModal = (item: any) => {
-    setAssigningItem(item);
-    setShowAssignModal(true);
-  };
-
-  const handleReassign = async (staffRoleId: string) => {
-    if (!assigningItem) return;
-    setProcessingId(assigningItem.id);
-    try {
-      const res = await fetch("/api/admin/staff-applications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: assigningItem.id, staffRoleId }),
-      });
-      if (res.ok) {
-        setShowAssignModal(false);
-        setAssigningItem(null);
-        fetchData();
-      }
-    } catch {
-      // ignore
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   const filteredApplications = applications.filter((a) =>
     !search ||
     a.user.name.includes(search) ||
     a.user.studentId.includes(search)
   );
 
-  const filteredAssignments = assignments.filter((a) =>
+  const filteredUserAssignments = userAssignments.filter((ua) =>
     !search ||
-    a.user.name.includes(search) ||
-    a.user.studentId.includes(search)
+    ua.user.name.includes(search) ||
+    ua.user.studentId.includes(search)
   );
 
   const stats = {
     totalRoles: staffRoles.length,
-    totalAssignments: staffRoles.reduce((sum, r) => sum + (r._count?.assignments || 0), 0),
+    totalAssignments: userAssignments.length,
     pendingApps: applications.filter((a) => a.status === "PENDING").length,
     approvedApps: applications.filter((a) => a.status === "APPROVED").length,
   };
@@ -422,134 +508,70 @@ export default function AdminStaff() {
           ) : filteredApplications.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">暂无申请数据</div>
           ) : (
-            <>
-              {/* 桌面端表格 */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">学号</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">申请岗位</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">场次</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredApplications.map((app) => (
-                      <tr key={app.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{app.user.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">{app.user.studentId}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{app.staffRole.name}</td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            app.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {SESSION_LABELS[app.session]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                            app.status === "APPROVED" ? "bg-green-100 text-green-700" :
-                            app.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {app.status === "APPROVED" ? <CheckCircle2 className="w-3 h-3" /> :
-                             app.status === "PENDING" ? <Clock className="w-3 h-3" /> :
-                             <XCircle className="w-3 h-3" />}
-                            {STATUS_LABELS[app.status]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {app.status === "PENDING" && (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleApplicationAction(app.id, "APPROVED")}
-                                disabled={processingId === app.id}
-                                className="text-green-600 hover:text-green-800 text-xs font-medium disabled:opacity-50"
-                              >
-                                {processingId === app.id ? "..." : "通过"}
-                              </button>
-                              <button
-                                onClick={() => handleApplicationAction(app.id, "REJECTED")}
-                                disabled={processingId === app.id}
-                                className="text-red-600 hover:text-red-800 text-xs font-medium disabled:opacity-50"
-                              >
-                                {processingId === app.id ? "..." : "拒绝"}
-                              </button>
-                            </div>
-                          )}
-                          {app.status === "APPROVED" && (
-                            <button
-                              onClick={() => openAssignModal(app)}
-                              className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                            >
-                              重新分配
-                            </button>
-                          )}
-                          {app.status === "REJECTED" && (
-                            <button
-                              onClick={() => handleApplicationAction(app.id, "PENDING")}
-                              disabled={processingId === app.id}
-                              className="text-gray-500 hover:text-gray-700 text-xs font-medium disabled:opacity-50"
-                            >
-                              <RefreshCw className="w-3 h-3 inline mr-1" />
-                              重新审核
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* 手机端卡片列表 */}
-              <div className="lg:hidden divide-y divide-gray-100">
-                {filteredApplications.map((app) => (
-                  <div key={app.id} className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-semibold text-gray-900">{app.user.name}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            app.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {SESSION_LABELS[app.session]}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                            app.status === "APPROVED" ? "bg-green-100 text-green-700" :
-                            app.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {STATUS_LABELS[app.status]}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                          <p><span className="text-gray-400">学号：</span>{app.user.studentId}</p>
-                          <p><span className="text-gray-400">申请岗位：</span>{app.staffRole.name}</p>
-                        </div>
-                        <div className="flex gap-2 mt-2 flex-wrap">
-                          {app.status === "PENDING" && (
-                            <>
-                              <button onClick={() => handleApplicationAction(app.id, "APPROVED")} disabled={processingId === app.id} className="text-xs px-2.5 py-1 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 disabled:opacity-50">{processingId === app.id ? "..." : "通过"}</button>
-                              <button onClick={() => handleApplicationAction(app.id, "REJECTED")} disabled={processingId === app.id} className="text-xs px-2.5 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50">{processingId === app.id ? "..." : "拒绝"}</button>
-                            </>
-                          )}
-                          {app.status === "APPROVED" && (
-                            <button onClick={() => openAssignModal(app)} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">重新分配</button>
-                          )}
-                          {app.status === "REJECTED" && (
-                            <button onClick={() => handleApplicationAction(app.id, "PENDING")} disabled={processingId === app.id} className="text-xs px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 disabled:opacity-50"><RefreshCw className="w-3 h-3 inline mr-1" />重新审核</button>
-                          )}
-                        </div>
-                      </div>
+            <div className="space-y-3">
+              {filteredApplications.map((app) => (
+                <div key={app.id} className="bg-white rounded-xl shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                      <span className="text-sm font-bold text-gray-600">{app.user.name.charAt(0)}</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{app.user.name}</p>
+                      <p className="text-xs text-gray-400 font-mono">{app.user.studentId}</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            </>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-500">{app.staffRole.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      app.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {SESSION_LABELS[app.session]}
+                    </span>
+                    <Badge variant={app.status === "APPROVED" ? "success" : app.status === "PENDING" ? "warning" : "danger"} size="sm">
+                      {STATUS_LABELS[app.status]}
+                    </Badge>
+                  </div>
+                  <div className="flex gap-2">
+                    {app.status === "PENDING" && (
+                      <>
+                        <button
+                          onClick={() => handleApplicationAction(app.id, "APPROVED")}
+                          disabled={processingId === app.id}
+                          className="text-xs px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 disabled:opacity-50 font-medium"
+                        >
+                          {processingId === app.id ? "..." : "通过"}
+                        </button>
+                        <button
+                          onClick={() => handleApplicationAction(app.id, "REJECTED")}
+                          disabled={processingId === app.id}
+                          className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50 font-medium"
+                        >
+                          {processingId === app.id ? "..." : "拒绝"}
+                        </button>
+                      </>
+                    )}
+                    {app.status === "APPROVED" && (
+                      <button
+                        onClick={() => openAssignModal(app)}
+                        className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium"
+                      >
+                        调整岗位
+                      </button>
+                    )}
+                    {app.status === "REJECTED" && (
+                      <button
+                        onClick={() => handleApplicationAction(app.id, "PENDING")}
+                        disabled={processingId === app.id}
+                        className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 disabled:opacity-50 font-medium"
+                      >
+                        <RefreshCw className="w-3 h-3 inline mr-1" />
+                        重新审核
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -560,80 +582,66 @@ export default function AdminStaff() {
             <div className="text-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto" />
             </div>
-          ) : filteredAssignments.length === 0 ? (
+          ) : filteredUserAssignments.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">暂无已分配人员</div>
           ) : (
-            <>
-              {/* 桌面端表格 */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">学号</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">岗位</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">场次</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredAssignments.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.user.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">{item.user.studentId}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{item.staffRole.name}</td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            item.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {SESSION_LABELS[item.session]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => openAssignModal(item)}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                          >
-                            调整岗位
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* 手机端卡片列表 */}
-              <div className="lg:hidden divide-y divide-gray-100">
-                {filteredAssignments.map((item) => (
-                  <div key={item.id} className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-semibold text-gray-900">{item.user.name}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            item.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {SESSION_LABELS[item.session]}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                          <p><span className="text-gray-400">学号：</span>{item.user.studentId}</p>
-                          <p><span className="text-gray-400">岗位：</span>{item.staffRole.name}</p>
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <button onClick={() => openAssignModal(item)} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">调整岗位</button>
-                        </div>
+            <div className="space-y-3">
+              {filteredUserAssignments.map((ua) => (
+                <div key={ua.userId} className="bg-white rounded-xl shadow-sm p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                        <span className="text-sm font-bold text-gray-600">{ua.user.name.charAt(0)}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{ua.user.name}</p>
+                        <p className="text-xs text-gray-400 font-mono">{ua.user.studentId}</p>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        ua.session === "FIRST" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {SESSION_LABELS[ua.session]}
+                      </span>
+                      <button
+                        onClick={() => openAssignModal(ua)}
+                        className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium"
+                      >
+                        调整岗位
+                      </button>
+                      <button
+                        onClick={() => handleRemoveAllRoles(ua.userId, ua.user.name)}
+                        className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium"
+                        title="取消所有工作人员岗位"
+                      >
+                        取消工作人员
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </>
+                  <div className="flex flex-wrap gap-2">
+                    {ua.roles.map((role: any) => (
+                      <div key={role.assignmentId} className="flex items-center gap-1 bg-gray-50 rounded-lg px-3 py-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-700">{role.roleName}</span>
+                        <button
+                          onClick={() => handleRemoveRole(role.assignmentId, role.roleName)}
+                          className="ml-1 p-0.5 hover:bg-gray-200 rounded transition-colors"
+                          title="移除此岗位"
+                        >
+                          <X className="w-3 h-3 text-gray-400" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
 
+      {/* Role Modal */}
       <Modal
         open={showRoleModal}
         onClose={() => { setShowRoleModal(false); setEditingRole(null); }}
@@ -706,11 +714,12 @@ export default function AdminStaff() {
         </div>
       </Modal>
 
+      {/* Multi-Role Assign Modal */}
       <Modal
         open={showAssignModal}
-        onClose={() => { setShowAssignModal(false); setAssigningItem(null); }}
+        onClose={() => { setShowAssignModal(false); setAssigningItem(null); setSelectedRoles([]); }}
         title="调整岗位分配"
-        size="sm"
+        size="md"
       >
         {assigningItem && (
           <div className="space-y-4">
@@ -720,28 +729,56 @@ export default function AdminStaff() {
                 <span className="text-gray-500 ml-2">({assigningItem.user.studentId})</span>
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                当前岗位：{assigningItem.staffRole.name} · {SESSION_LABELS[assigningItem.session]}
+                {SESSION_LABELS[assigningItem.session]} · 已分配 {assigningItem.roles?.length || 1} 个岗位
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">选择新岗位</label>
-              <select
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-red-600 outline-none bg-white"
-                onChange={(e) => handleReassign(e.target.value)}
-                defaultValue=""
-              >
-                <option value="" disabled>请选择岗位</option>
-                {staffRoles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name} ({role._count?.assignments || 0}/{role.requiredCount})
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-2">选择岗位（可多选）</label>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {staffRoles.map((role) => {
+                  const isChecked = selectedRoles.includes(role.id);
+                  return (
+                    <label
+                      key={role.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        isChecked
+                          ? "border-red-300 bg-red-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleRole(role.id)}
+                        className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{role.name}</p>
+                        <p className="text-xs text-gray-400">
+                          {role._count?.assignments || 0} / {role.requiredCount} 人
+                        </p>
+                      </div>
+                      {role.session && (
+                        <Badge variant="info" size="sm">{SESSION_LABELS[role.session]}</Badge>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-400 mt-2">已选择 {selectedRoles.length} 个岗位</p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button variant="secondary" onClick={() => { setShowAssignModal(false); setAssigningItem(null); setSelectedRoles([]); }} fullWidth>取消</Button>
+              <Button onClick={handleMultiAssign} loading={processingId === assigningItem.id} fullWidth>
+                <CheckCircle2 className="w-4 h-4" />
+                确认分配
+              </Button>
             </div>
           </div>
         )}
       </Modal>
 
+      {/* Delete Confirm Modal */}
       <Modal
         open={!!showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(null)}

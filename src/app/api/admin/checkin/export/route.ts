@@ -1,17 +1,28 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/permissions";
 import * as XLSX from "xlsx";
+
+function styleHeaderRow(ws: any, colCount: number) {
+  const headerStyle = {
+    fill: { fgColor: { rgb: "DC2626" } },
+    font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
+    alignment: { horizontal: "center", vertical: "center" },
+  };
+  for (let c = 0; c < colCount; c++) {
+    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[cellRef]) ws[cellRef].s = headerStyle;
+  }
+}
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
-    const { session: sessionParam, userType } = body;
+    const { session: sessionParam, userType, checkinSessionId, exportMode = "all" } = body;
 
     const where: any = {};
     if (sessionParam && ["FIRST", "SECOND"].includes(sessionParam)) {
@@ -19,6 +30,9 @@ export async function POST(req: Request) {
     }
     if (userType && ["STUDENT", "STAFF"].includes(userType)) {
       where.userType = userType;
+    }
+    if (checkinSessionId) {
+      where.checkinSessionId = checkinSessionId;
     }
 
     const records = await prisma.checkinRecord.findMany({
@@ -34,20 +48,10 @@ export async function POST(req: Request) {
             phone: true,
           },
         },
+        checkinSession: { select: { id: true, name: true, status: true } },
       },
       orderBy: { checkedAt: "asc" },
     });
-
-    // 获取未签到人员
-    let uncheckedList: any[] = [];
-    if (userType === "STUDENT" || !userType) {
-      const registrations = await prisma.registration.findMany({
-        where: { status: "APPROVED", session: sessionParam || undefined },
-        include: { user: { select: { id: true, name: true, studentId: true, className: true, grade: true } } },
-      });
-      const checkedIds = new Set(records.filter(r => r.userType === "STUDENT").map(r => r.userId));
-      uncheckedList = registrations.filter(r => !checkedIds.has(r.userId));
-    }
 
     const STATUS_LABELS: Record<string, string> = {
       ON_TIME: "准时",
@@ -62,84 +66,173 @@ export async function POST(req: Request) {
       MANUAL: "手动补签",
     };
 
-    // 签到记录数据
-    const exportData = records.map((r, i) => ({
-      序号: i + 1,
-      姓名: r.user.name,
-      学号: r.user.studentId,
-      年级: r.user.grade ? `${r.user.grade}级` : "",
-      班级: r.user.className || "",
-      手机号: r.user.phone || "",
-      场次: r.session === "FIRST" ? "第一场" : "第二场",
-      身份: r.userType === "STAFF" ? "工作人员" : "学生",
-      签到方式: METHOD_LABELS[r.method] || r.method,
-      状态: STATUS_LABELS[r.status] || r.status,
-      签到时间: r.checkedAt.toLocaleString("zh-CN"),
-    }));
-
-    // 未签到人员数据
-    const uncheckedData = uncheckedList.map((reg, i) => ({
-      序号: i + 1,
-      姓名: reg.user.name,
-      学号: reg.user.studentId,
-      年级: reg.user.grade ? `${reg.user.grade}级` : "",
-      班级: reg.user.className || "",
-      场次: reg.session === "FIRST" ? "第一场" : "第二场",
-    }));
-
-    // 创建工作簿
-    const wb = XLSX.utils.book_new();
-
-    // 签到记录表
-    const ws1 = XLSX.utils.json_to_sheet(exportData);
-    ws1["!cols"] = [
-      { wch: 6 },   // 序号
-      { wch: 12 },  // 姓名
-      { wch: 16 },  // 学号
-      { wch: 8 },   // 年级
-      { wch: 16 },  // 班级
-      { wch: 14 },  // 手机号
-      { wch: 8 },   // 场次
-      { wch: 10 },  // 身份
-      { wch: 12 },  // 签到方式
-      { wch: 8 },   // 状态
-      { wch: 20 },  // 签到时间
-    ];
-
-    // 添加标题行样式（通过合并单元格实现）
     const sessionLabel = sessionParam ? (sessionParam === "FIRST" ? "第一场" : "第二场") : "全部";
     const typeLabel = userType === "STAFF" ? "工作人员" : userType === "STUDENT" ? "学生" : "全部";
-    ws1["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
-    ws1["A1"] = { t: "s", v: `${typeLabel}签到记录 - ${sessionLabel} (${new Date().toLocaleDateString("zh-CN")})`, s: { font: { bold: true, sz: 14 }, alignment: { horizontal: "center" } } };
 
-    XLSX.utils.book_append_sheet(wb, ws1, "签到记录");
+    const wb = XLSX.utils.book_new();
 
-    // 未签到人员表
-    if (uncheckedData.length > 0) {
-      const ws2 = XLSX.utils.json_to_sheet(uncheckedData);
-      ws2["!cols"] = [
-        { wch: 6 },
-        { wch: 12 },
-        { wch: 16 },
-        { wch: 8 },
-        { wch: 16 },
-        { wch: 8 },
+    if (exportMode === "all") {
+      const studentRecords = records.filter(r => r.userType === "STUDENT");
+      const staffRecords = records.filter(r => r.userType === "STAFF");
+
+      if (studentRecords.length > 0) {
+        const studentData = studentRecords.map((r, i) => ({
+          序号: i + 1,
+          姓名: r.user.name,
+          学号: r.user.studentId,
+          年级: r.user.grade ? `${r.user.grade}级` : "",
+          班级: r.user.className || "",
+          签到活动: r.checkinSession?.name || "手动签到",
+          签到方式: METHOD_LABELS[r.method] || r.method,
+          状态: STATUS_LABELS[r.status] || r.status,
+          签到时间: r.checkedAt.toLocaleString("zh-CN"),
+        }));
+        const ws = XLSX.utils.json_to_sheet(studentData);
+        ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 20 }];
+        styleHeaderRow(ws, 9);
+        XLSX.utils.book_append_sheet(wb, ws, "学生签到记录");
+      }
+
+      if (staffRecords.length > 0) {
+        const staffAssignments = await prisma.staffAssignment.findMany({
+          where: { session: sessionParam || undefined },
+          include: { staffRole: { select: { name: true } } },
+        });
+        const staffData = staffRecords.map((r, i) => {
+          const assignment = staffAssignments.find(a => a.userId === r.userId);
+          return {
+            序号: i + 1,
+            姓名: r.user.name,
+            学号: r.user.studentId,
+            岗位: assignment?.staffRole?.name || "未知",
+            签到活动: r.checkinSession?.name || "手动签到",
+            签到方式: METHOD_LABELS[r.method] || r.method,
+            状态: STATUS_LABELS[r.status] || r.status,
+            签到时间: r.checkedAt?.toLocaleString("zh-CN") || "",
+          };
+        });
+        const ws = XLSX.utils.json_to_sheet(staffData);
+        ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 20 }];
+        styleHeaderRow(ws, 8);
+        XLSX.utils.book_append_sheet(wb, ws, "工作人员签到记录");
+      }
+
+      if (!sessionParam || userType !== "STAFF") {
+        const registrations = await prisma.registration.findMany({
+          where: { status: "APPROVED", session: sessionParam || undefined },
+          include: { user: { select: { id: true, name: true, studentId: true, className: true, grade: true } } },
+        });
+        const checkedIds = new Set(records.filter(r => r.userType === "STUDENT").map(r => r.userId));
+        const uncheckedStudents = registrations.filter(r => !checkedIds.has(r.userId));
+        if (uncheckedStudents.length > 0) {
+          const uncheckedData = uncheckedStudents.map((reg, i) => ({
+            序号: i + 1,
+            姓名: reg.user.name,
+            学号: reg.user.studentId,
+            年级: reg.user.grade ? `${reg.user.grade}级` : "",
+            班级: reg.user.className || "",
+          }));
+          const ws = XLSX.utils.json_to_sheet(uncheckedData);
+          ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 16 }];
+          styleHeaderRow(ws, 5);
+          XLSX.utils.book_append_sheet(wb, ws, "未签到学生");
+        }
+      }
+
+      if (!sessionParam || userType !== "STUDENT") {
+        const staffAssignments = await prisma.staffAssignment.findMany({
+          where: { session: sessionParam || undefined },
+          include: { user: { select: { name: true, studentId: true } }, staffRole: { select: { name: true } } },
+        });
+        const checkedStaffIds = new Set(records.filter(r => r.userType === "STAFF").map(r => r.userId));
+        const uncheckedStaff = staffAssignments.filter(a => !checkedStaffIds.has(a.userId));
+        if (uncheckedStaff.length > 0) {
+          const uncheckedData = uncheckedStaff.map((a, i) => ({
+            序号: i + 1,
+            姓名: a.user.name,
+            学号: a.user.studentId,
+            岗位: a.staffRole?.name || "未知",
+          }));
+          const ws = XLSX.utils.json_to_sheet(uncheckedData);
+          ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 16 }];
+          styleHeaderRow(ws, 4);
+          XLSX.utils.book_append_sheet(wb, ws, "未签到工作人员");
+        }
+      }
+    } else {
+      const exportData = records.map((r, i) => ({
+        序号: i + 1,
+        姓名: r.user.name,
+        学号: r.user.studentId,
+        年级: r.user.grade ? `${r.user.grade}级` : "",
+        班级: r.user.className || "",
+        手机号: r.user.phone || "",
+        场次: r.session === "FIRST" ? "第一场" : "第二场",
+        身份: r.userType === "STAFF" ? "工作人员" : "学生",
+        签到活动: r.checkinSession?.name || "手动签到",
+        签到方式: METHOD_LABELS[r.method] || r.method,
+        状态: STATUS_LABELS[r.status] || r.status,
+        签到时间: r.checkedAt?.toLocaleString("zh-CN") || "",
+      }));
+
+      const ws1 = XLSX.utils.json_to_sheet(exportData);
+      ws1["!cols"] = [
+        { wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 16 },
+        { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 12 },
+        { wch: 8 }, { wch: 20 },
       ];
-      ws2["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
-      ws2["A1"] = { t: "s", v: `未签到人员名单 - ${sessionLabel} (共${uncheckedData.length}人)`, s: { font: { bold: true, sz: 14 }, alignment: { horizontal: "center" } } };
-      XLSX.utils.book_append_sheet(wb, ws2, "未签到人员");
+      styleHeaderRow(ws1, 12);
+      XLSX.utils.book_append_sheet(wb, ws1, "签到记录");
+
+      let uncheckedList: any[] = [];
+      if (userType === "STUDENT" || !userType) {
+        const registrations = await prisma.registration.findMany({
+          where: { status: "APPROVED", session: sessionParam || undefined },
+          include: { user: { select: { id: true, name: true, studentId: true, className: true, grade: true } } },
+        });
+        const checkedIds = new Set(records.filter(r => r.userType === "STUDENT").map(r => r.userId));
+        uncheckedList = registrations.filter(r => !checkedIds.has(r.userId));
+      }
+      if (userType === "STAFF" || !userType) {
+        const staffAssignments = await prisma.staffAssignment.findMany({
+          where: { session: sessionParam || undefined },
+          include: { user: { select: { name: true, studentId: true } }, staffRole: { select: { name: true } } },
+        });
+        const checkedStaffIds = new Set(records.filter(r => r.userType === "STAFF").map(r => r.userId));
+        const uncheckedStaff = staffAssignments.filter(a => !checkedStaffIds.has(a.userId));
+        uncheckedList = [...uncheckedList, ...uncheckedStaff.map(a => ({
+          user: a.user,
+          session: a.session,
+          roleName: a.staffRole?.name,
+        }))];
+      }
+
+      if (uncheckedList.length > 0) {
+        const uncheckedData = uncheckedList.map((item, i) => ({
+          序号: i + 1,
+          姓名: item.user.name,
+          学号: item.user.studentId,
+          年级: item.user.grade ? `${item.user.grade}级` : "",
+          班级: item.user.className || "",
+          场次: item.session === "FIRST" ? "第一场" : "第二场",
+          岗位: item.roleName || "",
+        }));
+        const ws2 = XLSX.utils.json_to_sheet(uncheckedData);
+        ws2["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 16 }, { wch: 8 }, { wch: 16 }];
+        styleHeaderRow(ws2, 7);
+        XLSX.utils.book_append_sheet(wb, ws2, "未签到人员");
+      }
     }
 
-    // 统计信息表
     const statsData = [
-      { 统计项: "总人数", 数值: records.length },
+      { 统计项: "总签到人数", 数值: records.length },
       { 统计项: "准时签到", 数值: records.filter(r => r.status === "ON_TIME").length },
       { 统计项: "迟到", 数值: records.filter(r => r.status === "LATE").length },
-      { 统计项: "未签到", 数值: uncheckedData.length },
-      { 统计项: "签到率", 数值: records.length > 0 ? `${Math.round((records.filter(r => r.status === "ON_TIME").length / (records.length + uncheckedData.length)) * 100)}%` : "0%" },
+      { 统计项: "签到率", 数值: records.length > 0 ? `${Math.round((records.filter(r => r.status === "ON_TIME").length / records.length) * 100)}%` : "0%" },
     ];
     const ws3 = XLSX.utils.json_to_sheet(statsData);
-    ws3["!cols"] = [{ wch: 12 }, { wch: 12 }];
+    ws3["!cols"] = [{ wch: 16 }, { wch: 12 }];
+    styleHeaderRow(ws3, 2);
     XLSX.utils.book_append_sheet(wb, ws3, "统计信息");
 
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -149,7 +242,7 @@ export async function POST(req: Request) {
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       },
     });
   } catch {

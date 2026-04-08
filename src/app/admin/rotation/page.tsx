@@ -18,6 +18,7 @@ import {
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 const STATION_LABELS: Record<string, string> = {
   LISTEN_COMMAND: "听我口令",
@@ -34,6 +35,7 @@ const STATION_COLORS: Record<string, string> = {
 };
 
 export default function RotationPage() {
+  const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<"schedule" | "generate" | "adjust">("schedule");
   const [session, setSession] = useState<string>("FIRST");
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -107,12 +109,13 @@ export default function RotationPage() {
       if (res.ok) {
         setPreview(data.schedules);
         setActiveTab("schedule");
+        success("轮转排班生成成功");
         fetchData();
       } else {
-        alert(data.error || "生成失败");
+        showError(data.error || "生成失败");
       }
     } catch {
-      alert("生成失败");
+      showError("生成失败");
     } finally {
       setGenerating(false);
     }

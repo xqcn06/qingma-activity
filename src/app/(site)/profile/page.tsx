@@ -52,7 +52,7 @@ export default function ProfilePage() {
   const fetchData = async () => {
     try {
       const [teamRes, checkinRes] = await Promise.all([
-        fetch("/api/my-team"),
+        fetch("/api/teams/my"),
         fetch("/api/checkin/status"),
       ]);
       if (teamRes.ok) setMyTeam(await teamRes.json());

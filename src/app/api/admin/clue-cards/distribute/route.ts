@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { requireAdminAuth } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
   try {
     const body = await request.json();
     const { session } = body;

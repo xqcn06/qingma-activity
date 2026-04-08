@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/Toast";
 
 const fadeInUp = { initial: { opacity: 0, y: 15 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "-40px" } };
 
@@ -88,6 +89,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 export default function RegisterPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const { error: showError } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [existingRegistration, setExistingRegistration] = useState<any>(null);
@@ -151,14 +153,14 @@ export default function RegisterPage() {
 
       if (!res.ok) {
         const json = await res.json();
-        alert(json.error || "提交失败");
+        showError("提交失败", json.error || "提交失败");
         return;
       }
 
       setSubmitted(true);
       fetchRegistration();
     } catch {
-      alert("提交失败，请稍后重试");
+      showError("提交失败", "请稍后重试");
     } finally {
       setIsSubmitting(false);
     }

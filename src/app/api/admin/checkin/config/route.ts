@@ -1,23 +1,23 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/permissions";
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const sessionParam = searchParams.get("session");
+    const userType = searchParams.get("userType") || "STUDENT";
 
     if (!sessionParam || !["FIRST", "SECOND"].includes(sessionParam)) {
       return NextResponse.json({ error: "缺少或无效的 session 参数" }, { status: 400 });
     }
 
     const config = await prisma.checkinConfig.findUnique({
-      where: { session: sessionParam as any },
+      where: { session_userType: { session: sessionParam as any, userType } },
     });
 
     return NextResponse.json(config);
@@ -28,13 +28,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
-    const { session: sessionParam, startTime, endTime, fenceCenterLat, fenceCenterLng, fenceRadius, verificationCode, mapGeoJson } = body;
+    const { session: sessionParam, userType = "STUDENT", startTime, endTime, fenceCenterLat, fenceCenterLng, fenceRadius, verificationCode, mapGeoJson } = body;
 
     if (!sessionParam || !["FIRST", "SECOND"].includes(sessionParam)) {
       return NextResponse.json({ error: "缺少或无效的 session 参数" }, { status: 400 });
@@ -45,9 +43,10 @@ export async function POST(req: Request) {
     }
 
     const config = await prisma.checkinConfig.upsert({
-      where: { session: sessionParam as any },
+      where: { session_userType: { session: sessionParam as any, userType } },
       create: {
         session: sessionParam as any,
+        userType,
         startTime: new Date(startTime),
         endTime: new Date(endTime),
         fenceCenterLat: fenceCenterLat ?? null,

@@ -29,6 +29,7 @@ const studentRoutes = [
   '/feedback',
   '/my-team',
   '/staff',
+  '/treasure-map',
 ]
 
 // 后台路由（需登录，ADMIN/TEACHER/STAFF）

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, Trophy, Clock, Map, Loader2, Crown } from "lucide-react";
+import { Users, Trophy, Clock, Map, Loader2, Crown, ArrowRight } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import CaptainBadge from "@/components/features/CaptainBadge";
 
 export default function MyTeamPage() {
@@ -129,6 +130,22 @@ export default function MyTeamPage() {
 
             {/* Right Column: Scores + Rotation */}
             <div className="space-y-6">
+              {/* Treasure Map Link */}
+              <Link href="/treasure-map" className="block bg-gradient-to-r from-red-600 to-red-500 rounded-2xl p-5 text-white hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                      <Map className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">寻宝地图</h3>
+                      <p className="text-xs text-white/70">查看线索卡和积分卡位置</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-5 h-5" />
+                </div>
+              </Link>
+
               {/* Scores */}
               {team.totalScore > 0 && (
                 <div className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">

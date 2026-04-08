@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Shield, KeyRound, Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 const passwordSchema = z.object({
-  newPassword: z.string().min(6, "密码至少6位"),
+  oldPassword: z.string().optional(),
+  newPassword: z.string()
+    .min(8, "密码至少8位")
+    .regex(/[A-Z]/, "密码需包含大写字母")
+    .regex(/[a-z]/, "密码需包含小写字母")
+    .regex(/[0-9]/, "密码需包含数字"),
   confirmPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "两次密码输入不一致",
@@ -20,11 +26,15 @@ type PasswordForm = z.infer<typeof passwordSchema>;
 
 export default function ChangePasswordPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
+  const [showOldPassword, setShowOldPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  const isFirstLogin = (session?.user as any)?.isFirstLogin;
 
   const {
     register,
@@ -39,10 +49,15 @@ export default function ChangePasswordPage() {
     setError("");
 
     try {
+      const body: any = { newPassword: data.newPassword };
+      if (!isFirstLogin && data.oldPassword) {
+        body.oldPassword = data.oldPassword;
+      }
+
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newPassword: data.newPassword }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -94,13 +109,17 @@ export default function ChangePasswordPage() {
                 <KeyRound className="w-8 h-8 text-amber-600" />
               </div>
               <h1 className="text-2xl font-bold text-gray-900">修改密码</h1>
-              <p className="text-gray-500 text-sm mt-1">首次登录，请修改初始密码</p>
+              <p className="text-gray-500 text-sm mt-1">
+                {isFirstLogin ? "首次登录，请修改初始密码" : "修改你的登录密码"}
+              </p>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6 flex items-start gap-2 text-sm text-amber-800">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              为保障账号安全，首次登录必须修改密码。新密码至少6位。
-            </div>
+            {isFirstLogin && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6 flex items-start gap-2 text-sm text-amber-800">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                为保障账号安全，首次登录必须修改密码。密码至少8位，需包含大小写字母和数字。
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-6 flex items-center gap-2 text-sm text-red-700">
@@ -110,13 +129,37 @@ export default function ChangePasswordPage() {
             )}
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              {!isFirstLogin && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">当前密码</label>
+                  <div className="relative">
+                    <input
+                      {...register("oldPassword")}
+                      type={showOldPassword ? "text" : "password"}
+                      placeholder="请输入当前密码"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition-all pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOldPassword(!showOldPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showOldPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  {errors.oldPassword && (
+                    <p className="text-red-600 text-sm mt-1">{errors.oldPassword.message}</p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">新密码</label>
                 <div className="relative">
                   <input
                     {...register("newPassword")}
                     type={showPassword ? "text" : "password"}
-                    placeholder="至少6位"
+                    placeholder="至少8位，含大小写字母和数字"
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-red-600 focus:ring-2 focus:ring-red-600/20 outline-none transition-all pr-12"
                   />
                   <button

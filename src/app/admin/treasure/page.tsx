@@ -24,8 +24,10 @@ import {
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 export default function TreasurePage() {
+  const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<"treasure" | "clue" | "map">("treasure");
   const [session, setSession] = useState<string>("FIRST");
 
@@ -146,7 +148,7 @@ export default function TreasurePage() {
 
   const handleBatchCreateTreasure = async () => {
     if (!batchLocation || batchCount < 1) {
-      alert("请填写位置描述和数量");
+      showError("请填写位置描述和数量");
       return;
     }
     try {
@@ -166,19 +168,20 @@ export default function TreasurePage() {
         setShowCreateTreasure(false);
         setBatchCount(5);
         setBatchLocation("");
+        success(`成功创建 ${batchCount} 张积分卡`);
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.error || "创建失败");
+        showError(data.error || "创建失败");
       }
     } catch {
-      alert("创建失败");
+      showError("创建失败");
     }
   };
 
   const handleCreateTreasure = async () => {
     if (!batchLocation) {
-      alert("请填写位置描述");
+      showError("请填写位置描述");
       return;
     }
     try {
@@ -194,13 +197,14 @@ export default function TreasurePage() {
       if (res.ok) {
         setShowCreateTreasure(false);
         setBatchLocation("");
+        success("积分卡创建成功");
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.error || "创建失败");
+        showError(data.error || "创建失败");
       }
     } catch {
-      alert("创建失败");
+      showError("创建失败");
     }
   };
 
@@ -245,7 +249,7 @@ export default function TreasurePage() {
 
   const handleCreateClue = async () => {
     if (!clueContent) {
-      alert("请填写线索内容");
+      showError("请填写线索内容");
       return;
     }
     try {
@@ -261,19 +265,20 @@ export default function TreasurePage() {
       if (res.ok) {
         setShowCreateClue(false);
         setClueContent("");
+        success("线索卡创建成功");
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.error || "创建失败");
+        showError(data.error || "创建失败");
       }
     } catch {
-      alert("创建失败");
+      showError("创建失败");
     }
   };
 
   const handleDistributeClues = async () => {
     if (clueStats.pending === 0) {
-      alert("没有待分配的线索卡");
+      showError("没有待分配的线索卡");
       return;
     }
     setConfirmModal({
@@ -291,15 +296,13 @@ export default function TreasurePage() {
           });
           const data = await res.json();
           if (res.ok) {
-            alert(
-              `分配成功！共分配 ${data.distributed} 张线索卡（A级${data.breakdown.tierA}，B级${data.breakdown.tierB}，C级${data.breakdown.tierC}）`
-            );
+            success(`分配成功！共分配 ${data.distributed} 张线索卡（A级${data.breakdown.tierA}，B级${data.breakdown.tierB}，C级${data.breakdown.tierC}）`);
             fetchData();
           } else {
-            alert(data.error || "分配失败");
+            showError(data.error || "分配失败");
           }
         } catch {
-          alert("分配失败");
+          showError("分配失败");
         } finally {
           setDistributing(false);
         }
@@ -324,14 +327,14 @@ export default function TreasurePage() {
             body: JSON.stringify({ session }),
           });
           if (res.ok) {
-            alert("重置成功！");
+            success("重置成功！");
             fetchData();
           } else {
             const data = await res.json();
-            alert(data.error || "重置失败");
+            showError(data.error || "重置失败");
           }
         } catch {
-          alert("重置失败");
+          showError("重置失败");
         } finally {
           setResetting(false);
         }
@@ -379,7 +382,7 @@ export default function TreasurePage() {
 
   const handleCreateMapCard = async () => {
     if (!pendingRect || !pendingLocation) {
-      alert("请填写位置描述");
+      showError("请填写位置描述");
       return;
     }
     try {
@@ -399,13 +402,14 @@ export default function TreasurePage() {
       });
       if (res.ok) {
         setPendingRect(null);
+        success("地图标记创建成功");
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.error || "创建失败");
+        showError(data.error || "创建失败");
       }
     } catch {
-      alert("创建失败");
+      showError("创建失败");
     }
   };
 

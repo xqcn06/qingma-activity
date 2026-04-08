@@ -2,11 +2,19 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-// 更新内容块
+function hasPermission(permissions: string[], permission: string) {
+  return permissions.includes(permission);
+}
+
 export async function PUT(req: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
+    const permissions = (session.user as any).permissions || [];
+    if (!hasPermission(permissions, "MANAGE_SETTINGS")) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
 
     const { id } = await context.params;
     const body = await req.json();
@@ -29,11 +37,15 @@ export async function PUT(req: Request, context: { params: Promise<{ id: string 
   }
 }
 
-// 删除内容块
 export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
+    const permissions = (session.user as any).permissions || [];
+    if (!hasPermission(permissions, "MANAGE_SETTINGS")) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
 
     const { id } = await context.params;
 

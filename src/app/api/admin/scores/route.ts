@@ -1,13 +1,11 @@
-import { auth } from "@/lib/auth";
+import { requireAdminAuth } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const station = searchParams.get("station");
@@ -40,16 +38,22 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
     const { teamId, station, round, score, reason } = body;
 
     if (!teamId || !station || score === undefined) {
       return NextResponse.json({ error: "缺少必填参数" }, { status: 400 });
+    }
+
+    if (typeof score !== "number" || isNaN(score)) {
+      return NextResponse.json({ error: "分数必须为数字" }, { status: 400 });
+    }
+
+    if (score < -1000 || score > 10000) {
+      return NextResponse.json({ error: "分数范围应在 -1000 到 10000 之间" }, { status: 400 });
     }
 
     const newScore = await prisma.score.create({
@@ -59,7 +63,7 @@ export async function POST(req: Request) {
         round: round || null,
         score,
         reason: reason || null,
-        recordedBy: (session.user as any).id,
+        recordedBy: authResult.userId,
       },
       include: {
         team: { select: { name: true, session: true } },
@@ -77,16 +81,23 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
     const { id, teamId, station, round, score, reason } = body;
 
     if (!id) {
       return NextResponse.json({ error: "缺少ID" }, { status: 400 });
+    }
+
+    if (score !== undefined) {
+      if (typeof score !== "number" || isNaN(score)) {
+        return NextResponse.json({ error: "分数必须为数字" }, { status: 400 });
+      }
+      if (score < -1000 || score > 10000) {
+        return NextResponse.json({ error: "分数范围应在 -1000 到 10000 之间" }, { status: 400 });
+      }
     }
 
     const existing = await prisma.score.findUnique({ where: { id } });
@@ -123,10 +134,8 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Plus, Search, Loader2, Edit2, Trash2, Package, Download, Filter } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
+import { useToast } from "@/components/ui/Toast";
 
 const STATION_LABELS: Record<string, string> = {
   LISTEN_COMMAND: "听我口令",
@@ -43,6 +44,7 @@ const EMPTY_FORM = {
 };
 
 export default function AdminMaterials() {
+  const { success, error: showError } = useToast();
   const [materials, setMaterials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -194,10 +196,22 @@ export default function AdminMaterials() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `物资清单_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        const disposition = res.headers.get("Content-Disposition");
+        let fileName = `物资清单_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        if (disposition) {
+          const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+          if (match) fileName = decodeURIComponent(match[1].replace(/"/g, ""));
+        }
+        a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
+        success("导出成功");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showError("导出失败", err.error || "未知错误");
       }
+    } catch (e: any) {
+      showError("导出失败", e.message);
     } finally {
       setExportLoading(false);
     }

@@ -2,11 +2,19 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-// 获取指定页面的所有块
+function hasPermission(permissions: string[], permission: string) {
+  return permissions.includes(permission);
+}
+
 export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
+    const permissions = (session.user as any).permissions || [];
+    if (!hasPermission(permissions, "MANAGE_SETTINGS")) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
 
     const { searchParams } = new URL(req.url);
     const pageId = searchParams.get("pageId");
@@ -26,11 +34,15 @@ export async function GET(req: Request) {
   }
 }
 
-// 创建内容块
 export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
+    const permissions = (session.user as any).permissions || [];
+    if (!hasPermission(permissions, "MANAGE_SETTINGS")) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
 
     const body = await req.json();
     const { pageId, type, key, title, config, content, sortOrder } = body;

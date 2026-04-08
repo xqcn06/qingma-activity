@@ -21,10 +21,30 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { newPassword } = body;
+    const { newPassword, oldPassword } = body;
 
-    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
-      return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
+    // 密码强度校验：至少8位，包含大小写字母和数字
+    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 8) {
+      return NextResponse.json({ error: "密码至少8位" }, { status: 400 });
+    }
+
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumber) {
+      return NextResponse.json({ error: "密码需包含大写字母、小写字母和数字" }, { status: 400 });
+    }
+
+    // 非首次登录时，需验证旧密码
+    if (!user.isFirstLogin) {
+      if (!oldPassword) {
+        return NextResponse.json({ error: "请输入当前密码" }, { status: 400 });
+      }
+      const isOldValid = await bcrypt.compare(oldPassword, user.password);
+      if (!isOldValid) {
+        return NextResponse.json({ error: "当前密码错误" }, { status: 400 });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);

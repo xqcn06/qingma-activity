@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Search, CheckCircle2, XCircle, Clock, Download, Users, Loader2, Trash2, CheckCheck, X, FileText } from "lucide-react";
 import Modal from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 
 const POSITION_LABELS: Record<string, string> = {
   CLASS_MONITOR: "班长",
@@ -23,6 +24,7 @@ const SESSION_LABELS: Record<string, string> = {
 };
 
 export default function AdminRegistrations() {
+  const { success, error: showError } = useToast();
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -172,12 +174,22 @@ export default function AdminRegistrations() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `报名数据_${new Date().toLocaleDateString()}.xlsx`;
+        const disposition = res.headers.get("Content-Disposition");
+        let fileName = `报名数据_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        if (disposition) {
+          const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+          if (match) fileName = decodeURIComponent(match[1].replace(/"/g, ""));
+        }
+        a.download = fileName;
         a.click();
         window.URL.revokeObjectURL(url);
+        success("导出成功");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showError("导出失败", err.error);
       }
-    } catch {
-      // ignore
+    } catch (e: any) {
+      showError("导出失败", e.message);
     } finally {
       setExportLoading(false);
     }

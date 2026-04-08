@@ -1,29 +1,35 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/permissions";
 import crypto from "crypto";
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const { searchParams } = new URL(req.url);
     const sessionParam = searchParams.get("session");
+    const userType = searchParams.get("userType") || "STUDENT";
+    const checkinSessionId = searchParams.get("checkinSessionId");
 
     if (!sessionParam || !["FIRST", "SECOND"].includes(sessionParam)) {
       return NextResponse.json({ error: "缺少或无效的 session 参数" }, { status: 400 });
     }
 
     const now = new Date();
+    const where: any = {
+      session: sessionParam as any,
+      userType,
+      expiresAt: { gt: now },
+    };
+    if (checkinSessionId) {
+      where.checkinSessionId = checkinSessionId;
+    }
 
     const validToken = await prisma.qRCodeToken.findFirst({
-      where: {
-        session: sessionParam as any,
-        expiresAt: { gt: now },
-      },
+      where,
       orderBy: { createdAt: "desc" },
     });
 
@@ -38,25 +44,25 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
+    const authResult = await requireAdminAuth();
+    if (authResult instanceof NextResponse) return authResult;
 
     const body = await req.json();
-    const { session: sessionParam } = body;
+    const { session: sessionParam, userType = "STUDENT", checkinSessionId } = body;
 
     if (!sessionParam || !["FIRST", "SECOND"].includes(sessionParam)) {
       return NextResponse.json({ error: "缺少或无效的 session 参数" }, { status: 400 });
     }
 
     const token = crypto.randomBytes(16).toString("hex");
-    const expiresAt = new Date(Date.now() + 30 * 1000);
+    const expiresAt = new Date(Date.now() + 60 * 1000);
 
     const qrToken = await prisma.qRCodeToken.create({
       data: {
         token,
         session: sessionParam as any,
+        userType,
+        checkinSessionId: checkinSessionId || null,
         expiresAt,
       },
     });
@@ -66,6 +72,7 @@ export async function POST(req: Request) {
       data: {
         token: qrToken.token,
         expiresAt: qrToken.expiresAt,
+        countdown: 60,
       },
     });
   } catch {
