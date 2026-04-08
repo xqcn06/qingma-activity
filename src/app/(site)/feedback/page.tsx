@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import {
   Star,
   Send,
-  MessageSquare,
   CheckCircle2,
   Lightbulb,
   Loader2,
@@ -157,7 +156,7 @@ export default function FeedbackPage() {
                     </div>
                   </div>
                 </div>
-              )}
+              ))}
             </div>
 
             <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
