@@ -48,7 +48,7 @@ const fadeInUp = { initial: { opacity: 0, y: 30 }, whileInView: { opacity: 1, y:
 interface HomePageProps {
   hero: { title: string; subtitle: string; badge: string; org: string };
   announcement: { title: string; content: string; badge: string };
-  features: Array<{ href: string; label: string; icon: string; color: string }>;
+  features: Array<{ href?: string; link?: string; label: string; icon: string; color: string }>;
   overview: Array<{ icon: string; title: string; value: string; sub: string }>;
   cta: { title: string; desc: string };
 }
