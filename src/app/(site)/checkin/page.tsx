@@ -38,6 +38,7 @@ interface CheckinSessionInfo {
 interface CheckinStatus {
   sessions: CheckinSessionInfo[];
   allRecords: { id: string; checkinSessionId: string; checkinSessionName: string; method: string; status: string; checkinTime: string }[];
+  config?: { startTime: string; endTime: string | null; hasFence: boolean; fenceCenterLat: number | null; fenceCenterLng: number | null; fenceRadius: number | null };
 }
 
 const SESSION_LABELS: Record<SessionType, string> = {
