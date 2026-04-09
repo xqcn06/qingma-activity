@@ -254,7 +254,7 @@ export default function CheckinPage() {
   const [code, setCode] = useState("");
 
   // Fetch status
-  useEffect(() => {
+  const fetchStatus = useCallback(() => {
     if (sessionStatus !== "authenticated") return;
     
     const sessionToFetch = selectedSession;
@@ -277,6 +277,10 @@ export default function CheckinPage() {
       .catch(e => console.error("fetchStatus error:", e))
       .finally(() => setLoading(false));
   }, [sessionStatus, selectedSession]);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
 
   const haversineDistance = useCallback(
     (lat1: number, lon1: number, lat2: number, lon2: number) => {
