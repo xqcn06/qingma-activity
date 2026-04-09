@@ -9,7 +9,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    const application = await prisma.staffAssignment.findUnique({
+    const application = await prisma.staffAssignment.findFirst({
       where: { userId: (session.user as any).id },
       include: {
         staffRole: { select: { id: true, name: true } },
@@ -29,7 +29,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    await prisma.staffAssignment.delete({
+    await prisma.staffAssignment.deleteMany({
       where: { userId: (session.user as any).id },
     });
 

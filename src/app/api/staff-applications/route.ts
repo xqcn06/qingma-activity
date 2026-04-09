@@ -16,7 +16,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "缺少岗位ID" }, { status: 400 });
     }
 
-    const existing = await prisma.staffAssignment.findUnique({
+    const existing = await prisma.staffAssignment.findFirst({
       where: { userId: (session.user as any).id },
     });
 

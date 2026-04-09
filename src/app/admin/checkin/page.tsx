@@ -173,7 +173,7 @@ export default function AdminCheckin() {
       const res = await fetch(`/api/admin/checkin/records?id=${recordId}`, { method: "DELETE" });
       if (res.ok) {
         success("签到记录已删除");
-        if (selectedCheckinSession) fetchDetailData(selectedCheckinSession);
+        if (selectedSession) fetchDetailData(selectedSession.id);
       } else {
         const err = await res.json();
         showError("删除失败", err.error);
@@ -788,7 +788,7 @@ export default function AdminCheckin() {
                             {checkinType === "student" ? item.className : item.roleName}
                           </td>
                           <td className="px-3 py-2">
-                            <button onClick={() => handleManualCheckinById(item.studentId)} className="text-blue-500 hover:text-blue-700 text-sm">签到</button>
+                            <button onClick={() => { setManualId(item.studentId); handleManualCheckin(); }} className="text-blue-500 hover:text-blue-700 text-sm">签到</button>
                           </td>
                         </tr>
                       ))}

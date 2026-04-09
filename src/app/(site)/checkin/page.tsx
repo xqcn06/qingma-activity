@@ -39,6 +39,8 @@ interface CheckinStatus {
   sessions: CheckinSessionInfo[];
   allRecords: { id: string; checkinSessionId: string; checkinSessionName: string; method: string; status: string; checkinTime: string }[];
   config?: { startTime: string; endTime: string | null; hasFence: boolean; fenceCenterLat: number | null; fenceCenterLng: number | null; fenceRadius: number | null };
+  checkedIn?: boolean;
+  record?: { id: string; method: string; status: string; checkinTime: string } | null;
 }
 
 const SESSION_LABELS: Record<SessionType, string> = {
@@ -429,7 +431,7 @@ export default function CheckinPage() {
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">选择签到活动</label>
               {status?.sessions?.length === 0 && <div className="bg-yellow-50 rounded-xl p-4 text-center text-yellow-700">当前场次暂无签到活动</div>}
-              {status?.sessions?.length > 0 && (
+              {status?.sessions && status.sessions.length > 0 && (
                 <div className="grid grid-cols-1 gap-3">
                   {status.sessions.map((s) => (
                     <button key={s.id} onClick={() => { setSelectedSessionDetail(s); setSuccessState(false); setGpsCoords(null); setQrToken(""); setCode(""); }}
@@ -516,6 +518,7 @@ export default function CheckinPage() {
                         distance={distance}
                         inFence={inFence}
                         submitting={submitting}
+                        selectedSessionDetail={selectedSessionDetail}
                         onDetectLocation={detectLocation}
                         onCheckin={handleGpsCheckin}
                       />
@@ -548,6 +551,7 @@ export default function CheckinPage() {
                         distance={distance}
                         inFence={inFence}
                         submitting={submitting}
+                        selectedSessionDetail={selectedSessionDetail}
                         onDetectLocation={detectLocation}
                         onCheckin={handleGpsCheckin}
                       />
@@ -575,7 +579,7 @@ export default function CheckinPage() {
           </motion.div>
 
           {/* Status info card */}
-          {!successState && status?.checkedIn && status?.record && (
+          {!successState && selectedSessionDetail?.checkedIn && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -590,16 +594,16 @@ export default function CheckinPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">状态</span>
                   <Badge
-                    variant={status.record.status === "LATE" ? "warning" : "success"}
+                    variant={selectedSessionDetail?.record?.status === "LATE" ? "warning" : "success"}
                     size="md"
                   >
-                    {status.record.status === "LATE" ? "已签到（迟到）" : "已签到（准时）"}
+                    {selectedSessionDetail?.record?.status === "LATE" ? "已签到（迟到）" : "已签到（准时）"}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">签到时间</span>
                   <span className="font-mono font-medium text-gray-900">
-                    {new Date(status.record.checkinTime).toLocaleTimeString("zh-CN", {
+                    {selectedSessionDetail?.record && new Date(selectedSessionDetail.record.checkinTime).toLocaleTimeString("zh-CN", {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
@@ -608,7 +612,7 @@ export default function CheckinPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">签到方式</span>
                   <span className="font-medium text-gray-900">
-                    {METHOD_LABELS[status.record.method as CheckinMethod]}
+                    {METHOD_LABELS[selectedSessionDetail?.record?.method as CheckinMethod] || "未知"}
                   </span>
                 </div>
               </div>

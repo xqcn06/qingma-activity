@@ -4,17 +4,17 @@ import { NextResponse } from "next/server";
 
 const LOCK_DURATION = 5 * 60 * 1000; // 5分钟
 
-async function checkPermission() {
+async function checkPermission(): Promise<{ authorized: boolean; userId: string; userName: string; error?: NextResponse }> {
   const session = await auth();
   if (!session?.user) {
-    return { authorized: false, error: NextResponse.json({ error: "未登录" }, { status: 401 }) };
+    return { authorized: false, userId: "", userName: "", error: NextResponse.json({ error: "未登录" }, { status: 401 }) };
   }
   const userId = (session.user as any).id;
   const role = (session.user as any).role;
   if (role === "TEACHER" || role === "ADMIN") {
-    return { authorized: true, userId, userName: session.user.name as string };
+    return { authorized: true, userId, userName: session.user.name || "管理员" };
   }
-  return { authorized: false, error: NextResponse.json({ error: "权限不足" }, { status: 403 }) };
+  return { authorized: false, userId: "", userName: "", error: NextResponse.json({ error: "权限不足" }, { status: 403 }) };
 }
 
 export async function GET(req: Request) {
