@@ -203,14 +203,20 @@ export default function AdminStudents() {
   const handleResetPassword = async (id: string) => {
     setActionLoading(true);
     try {
-      await fetch("/api/admin/auth/reset-password", {
+      const res = await fetch("/api/admin/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: id }),
       });
-      fetchUsers();
+      if (res.ok) {
+        success("密码已重置为 123456");
+        fetchUsers();
+      } else {
+        const data = await res.json();
+        showError(data.error || "重置失败");
+      }
     } catch {
-      // ignore
+      showError("重置失败");
     } finally {
       setActionLoading(false);
       setShowActionMenu(null);

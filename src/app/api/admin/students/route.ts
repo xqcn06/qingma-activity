@@ -97,7 +97,7 @@ export async function PATCH(req: Request) {
   if (authResult instanceof NextResponse) return authResult;
 
   const body = await req.json();
-  const { id, ...data } = body;
+  const { id, name, studentId, grade, className, role, phone, email, password, isDisabled } = body;
 
   if (!id) {
     return NextResponse.json({ error: "用户ID为必填" }, { status: 400 });
@@ -108,14 +108,25 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "用户不存在" }, { status: 404 });
   }
 
-  const updateData: any = { ...data };
+  const updateData: any = {};
 
-  if (data.password) {
-    updateData.password = await bcrypt.hash(data.password, 10);
+  if (name !== undefined && name !== existing.name) updateData.name = name;
+  if (studentId !== undefined && studentId !== existing.studentId) updateData.studentId = studentId;
+  if (grade !== undefined && grade !== "" && grade !== existing.grade) updateData.grade = grade ? parseInt(grade) : null;
+  if (className !== undefined && className !== existing.className) updateData.className = className || null;
+  if (role !== undefined && role !== existing.role) updateData.role = role;
+  if (phone !== undefined && phone !== existing.phone) updateData.phone = phone;
+  if (email !== undefined && email !== existing.email) updateData.email = email || null;
+  if (isDisabled !== undefined && isDisabled !== existing.isDisabled) updateData.isDisabled = isDisabled;
+
+  if (password && password.trim()) {
+    updateData.password = await bcrypt.hash(password, 10);
     updateData.isFirstLogin = true;
   }
 
-  delete updateData.id;
+  if (Object.keys(updateData).length === 0) {
+    return NextResponse.json({ error: "没有需要更新的内容" }, { status: 400 });
+  }
 
   const user = await prisma.user.update({
     where: { id },
@@ -123,6 +134,34 @@ export async function PATCH(req: Request) {
   });
 
   return NextResponse.json(user);
+}
+
+export async function PUT(req: Request) {
+  const authResult = await requireAdminAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  const body = await req.json();
+  const { id, action } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "用户ID为必填" }, { status: 400 });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+  }
+
+  if (action === "resetPassword") {
+    const hashedPassword = await bcrypt.hash("123456", 10);
+    const user = await prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword, isFirstLogin: true },
+    });
+    return NextResponse.json(user);
+  }
+
+  return NextResponse.json({ error: "无效操作" }, { status: 400 });
 }
 
 export async function DELETE(req: Request) {
